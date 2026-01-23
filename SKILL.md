@@ -1,20 +1,50 @@
 ---
 name: last30days
-description: Research a topic from the last 30 days on Reddit + X; judge/summarize into best practices, a prompt pack, and a reusable context snippet.
-argument-hint: "[topic]"
+description: Research a topic from the last 30 days on Reddit + X, become an expert, and write copy-paste-ready prompts for the user's target tool.
+argument-hint: "[topic] for [tool]" or "[topic]"
 context: fork
 agent: Explore
 disable-model-invocation: true
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash, Read, Write, AskUserQuestion
 ---
 
-# last30days: 30-Day Research Synthesis
+# last30days: Become Expert → Write Prompts
 
-Research a topic across Reddit and X from the last 30 days, then synthesize findings into actionable best practices, prompts, and reusable context.
+Research a topic across Reddit and X, internalize the best practices, then write **copy-paste-ready prompts** the user can immediately use with their target tool.
+
+## CRITICAL: Parse User Intent
+
+Before doing anything, parse the user's input for TWO things:
+
+1. **TOPIC**: What they want to learn about (e.g., "web app mockups", "Claude Code skills", "image generation")
+2. **TARGET TOOL**: Where they'll use the prompts (e.g., "Nano Banana Pro", "ChatGPT", "Claude", "Midjourney")
+
+Common patterns:
+- `[topic] for [tool]` → "web mockups for Nano Banana Pro"
+- `[topic] prompts for [tool]` → "UI design prompts for Midjourney"
+- `[tool] [topic]` → "Nano Banana Pro dashboard mockups"
+- Just `[topic]` → Ask follow-up
+
+**If TARGET TOOL is unclear**, use AskUserQuestion:
+```
+What tool will you use these prompts with?
+
+Options:
+1. Nano Banana Pro (image generation)
+2. ChatGPT / Claude (text/code)
+3. Midjourney / DALL-E (image generation)
+4. Other (tell me)
+```
+
+**Store these values mentally** - you'll need them for the entire conversation:
+- `TOPIC = [extracted topic]`
+- `TARGET_TOOL = [extracted tool]`
+
+---
 
 ## Setup Check
 
-First, verify API key configuration exists:
+Verify API key configuration exists:
 
 ```bash
 if [ ! -f ~/.config/last30days/.env ]; then
@@ -26,11 +56,10 @@ fi
 
 ### If SETUP_NEEDED
 
-Run the NUX flow to configure API keys. Use the AskUserQuestion tool to collect:
+Run NUX flow to configure API keys. Use AskUserQuestion to collect:
 
 1. **OpenAI API Key** (optional but recommended for Reddit research)
 2. **xAI API Key** (optional but recommended for X research)
-3. **Model policies** (optional, defaults are usually fine)
 
 Then create the config:
 
@@ -42,12 +71,6 @@ cat > ~/.config/last30days/.env << 'ENVEOF'
 
 OPENAI_API_KEY=
 XAI_API_KEY=
-
-# Model selection (optional)
-# OPENAI_MODEL_POLICY=auto|pinned (default: auto)
-# OPENAI_MODEL_PIN=gpt-5.2 (only if pinned)
-# XAI_MODEL_POLICY=latest|stable|pinned (default: latest)
-# XAI_MODEL_PIN=grok-4 (only if pinned)
 ENVEOF
 
 chmod 600 ~/.config/last30days/.env
@@ -55,91 +78,125 @@ echo "Config created at ~/.config/last30days/.env"
 echo "Please edit it to add your API keys, then run the skill again."
 ```
 
-After creating the file, instruct the user to edit `~/.config/last30days/.env` and add their keys.
-
-**STOP HERE if setup was needed. Do not proceed until keys are configured.**
+**STOP HERE if setup was needed.**
 
 ---
 
 ## Research Execution
 
-If configured, run the research orchestrator:
+Run the research orchestrator with the TOPIC:
 
 ```bash
 python3 ~/.claude/skills/last30days/scripts/last30days.py "$ARGUMENTS" --emit=compact 2>&1
 ```
 
-The script will:
-- Auto-detect which keys are available
-- Auto-select the best models (or use pinned versions)
-- Search Reddit via OpenAI Responses API (if OpenAI key present)
-- Search X via xAI Responses API (if xAI key present)
-- Enrich Reddit threads with real engagement metrics
-- Score, rank, and dedupe results
-- Output files to `~/.local/share/last30days/out/`
+---
+
+## FIRST: Show the Work (Stats Summary)
+
+**Before anything else**, aggregate the metrics from the research and display an impressive summary. Parse the output above and calculate:
+
+- Count of Reddit threads
+- Sum of all Reddit upvotes (pts)
+- Sum of all Reddit comments (cmt)
+- Count of X posts
+- Sum of all X likes
+- Sum of all X reposts (rt)
+- List unique subreddits
+- List unique X authors
+
+Display it in this format:
+
+```
+📊 Research Complete
+
+Analyzed {total_sources} sources from the last 30 days
+├─ Reddit: {n} threads │ {sum} upvotes │ {sum} comments
+├─ X: {n} posts │ {sum} likes │ {sum} reposts
+└─ Top voices: r/{sub1}, r/{sub2}, @{handle1}, @{handle2}
+
+Now synthesizing into expert knowledge...
+```
+
+**Use real numbers from the research output.** This shows the user the skill actually did work.
 
 ---
 
-## RESEARCH DATA
+## THEN: Internalize the Research
 
-The output above contains the research data. Now synthesize it.
+Read the research output above. You are now becoming an **expert** in this topic.
 
----
-
-## Your Role: Judge and Synthesizer
-
-You are now the expert judge. Using the research data above, produce:
-
-### A) Best Practices (Grouped & Actionable)
-
-Group findings into 3-7 thematic categories. For each best practice:
-- State the practice clearly and actionably
-- Cite supporting item IDs (e.g., "supported by R3, R7, X2")
-- Note if it's **strongly supported** (multiple high-score sources) or **niche** (single source or low engagement)
-
-### B) Prompt Pack (3-7 Copy/Paste Prompts)
-
-Create ready-to-use prompts tailored to the topic. Each prompt should:
-- Be immediately usable (copy/paste ready)
-- Target a specific use case discovered in the research
-- Include any relevant context or constraints from the findings
-
-### C) Reusable Context Snippet
-
-Create a compact (~200-400 words) context block that other skills/tools can import. Include:
-- Core concepts and terminology
-- Key techniques or patterns
-- Common pitfalls to avoid
-- Brief source attribution
-
-### D) Sources Appendix
-
-List all source URLs organized by platform:
-- **Reddit**: Title, subreddit, URL, score
-- **X**: Author, text excerpt, URL, engagement
-
-### E) Confidence Assessment
-
-Explicitly state:
-- **Strongly Supported**: Practices backed by multiple high-engagement sources
-- **Emerging/Niche**: Practices from single sources or low engagement (still valuable but use with awareness)
-- **Gaps**: What the research didn't cover well
+Your job is NOT to dump the research back at the user. Your job is to:
+1. **Absorb** all the patterns, techniques, and insights
+2. **Synthesize** them into expertise
+3. **Apply** that expertise to write prompts for the user's TARGET_TOOL
 
 ---
 
-## Final Output
+## PRIMARY OUTPUT: Copy-Paste Prompts for TARGET_TOOL
 
-After completing your synthesis:
+**This is the main deliverable.** Create 5-7 prompts the user can copy-paste directly into their TARGET_TOOL.
 
-1. Display the full report to the user
-2. Confirm the files were written:
-   - `~/.local/share/last30days/out/report.md`
-   - `~/.local/share/last30days/out/report.json`
-   - `~/.local/share/last30days/out/last30days.context.md`
+### Format Each Prompt:
 
-3. Show the header summary:
-   ```
-   Models used: OpenAI={model} xAI={model}
-   Mode: {reddit-only|x-only|both}
-   Coverage: {note about triangulation if single-source}
-   ```
+```
+### [Use Case Name]
+
+**When to use:** [1-line description]
+
+**Prompt:**
+```
+[The actual prompt they copy-paste - ready to use, no placeholders unless clearly marked with [brackets]]
+```
+
+**Why this works:** [1-line explaining what research insight this is based on, cite source ID]
+```
+
+### Prompt Quality Checklist:
+- [ ] Can be pasted directly into TARGET_TOOL with zero edits
+- [ ] Uses specific patterns/keywords discovered in research
+- [ ] Appropriate length and style for TARGET_TOOL
+- [ ] Covers the most common use cases for TOPIC
+
+---
+
+## SECONDARY: Brief Best Practices (Optional)
+
+Only include if the user seems to want background. Keep it SHORT (3-5 bullets max):
+- Pattern 1 (source: R3, X5)
+- Pattern 2 (source: X2)
+- etc.
+
+---
+
+## FOLLOW-UP OFFER
+
+After delivering prompts, ALWAYS ask:
+
+> **Want me to write a custom prompt?** Tell me what you're trying to create and I'll write a prompt using everything I learned.
+
+This keeps you in "expert mode" - ready to apply your knowledge to their specific needs.
+
+---
+
+## CONTEXT MEMORY
+
+For the rest of this conversation, remember:
+- **TOPIC**: {topic}
+- **TARGET_TOOL**: {tool}
+- **KEY PATTERNS**: {list the top 3-5 patterns you learned}
+
+When the user asks for another prompt later, you don't need to re-research. Apply what you learned.
+
+---
+
+## Output Summary Footer
+
+End with a compact reminder of what you learned:
+
+```
+---
+📚 Expert in: {TOPIC} for {TARGET_TOOL}
+📊 Based on: {n} Reddit threads ({sum} upvotes) + {n} X posts ({sum} likes)
+🎯 Ready for custom prompts - just tell me what you want to create.
+```
