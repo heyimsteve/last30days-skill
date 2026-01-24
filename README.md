@@ -125,6 +125,16 @@ portrait photo, not a cartoon.
 
 *How to use: Upload your dog's photo first, then paste this prompt.*
 
+**The Result:**
+
+<p align="center">
+  <img src="assets/dog-original.jpeg" width="300" alt="Original dog photo"/>
+  &nbsp;&nbsp;→&nbsp;&nbsp;
+  <img src="assets/dog-as-human.png" width="300" alt="Dog as human"/>
+</p>
+
+Same golden fur → red hair. Same tongue out. Same harness. Same pink tag. ChatGPT nailed it.
+
 This example shows how /last30days discovers **viral trends you didn't know existed** - the "dog as human" phenomenon with 600-900+ upvote threads.
 
 ---
