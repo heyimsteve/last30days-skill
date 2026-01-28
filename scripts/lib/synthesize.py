@@ -11,7 +11,7 @@ from .env import OPENROUTER_BASE_URL
 OPENROUTER_CHAT_URL = f"{OPENROUTER_BASE_URL}/chat/completions"
 
 # Default Claude model for synthesis
-DEFAULT_SYNTH_MODEL = "anthropic/claude-sonnet-4"
+DEFAULT_SYNTH_MODEL = "anthropic/claude-sonnet-4.5"
 
 SYNTHESIS_SYSTEM_PROMPT = """You are a research synthesis expert. You analyze research results from Reddit and X (Twitter) and extract actionable patterns.
 

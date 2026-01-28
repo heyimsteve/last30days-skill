@@ -324,8 +324,8 @@ def main():
     )
     parser.add_argument(
         "--synth-model",
-        default="anthropic/claude-sonnet-4",
-        help="Claude model for synthesis (default: anthropic/claude-sonnet-4)",
+        default="anthropic/claude-sonnet-4.5",
+        help="Claude model for synthesis (default: anthropic/claude-sonnet-4.5)",
     )
 
     args = parser.parse_args()
