@@ -4,8 +4,12 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-CONFIG_DIR = Path.home() / ".config" / "last30days"
-CONFIG_FILE = CONFIG_DIR / ".env"
+# Config file is at project root (.env)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+CONFIG_FILE = PROJECT_ROOT / ".env"
+
+# OpenRouter base URL for Open Responses API
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def load_env_file(path: Path) -> Dict[str, str]:
@@ -36,14 +40,11 @@ def get_config() -> Dict[str, Any]:
     # Load from config file first
     file_env = load_env_file(CONFIG_FILE)
 
-    # Environment variables override file
+    # Environment variables override file - now uses single OpenRouter key
     config = {
-        'OPENAI_API_KEY': os.environ.get('OPENAI_API_KEY') or file_env.get('OPENAI_API_KEY'),
-        'XAI_API_KEY': os.environ.get('XAI_API_KEY') or file_env.get('XAI_API_KEY'),
-        'OPENAI_MODEL_POLICY': os.environ.get('OPENAI_MODEL_POLICY') or file_env.get('OPENAI_MODEL_POLICY', 'auto'),
-        'OPENAI_MODEL_PIN': os.environ.get('OPENAI_MODEL_PIN') or file_env.get('OPENAI_MODEL_PIN'),
-        'XAI_MODEL_POLICY': os.environ.get('XAI_MODEL_POLICY') or file_env.get('XAI_MODEL_POLICY', 'latest'),
-        'XAI_MODEL_PIN': os.environ.get('XAI_MODEL_PIN') or file_env.get('XAI_MODEL_PIN'),
+        'OPENROUTER_API_KEY': os.environ.get('OPENROUTER_API_KEY') or file_env.get('OPENROUTER_API_KEY'),
+        'OPENROUTER_MODEL_REDDIT': os.environ.get('OPENROUTER_MODEL_REDDIT') or file_env.get('OPENROUTER_MODEL_REDDIT'),
+        'OPENROUTER_MODEL_X': os.environ.get('OPENROUTER_MODEL_X') or file_env.get('OPENROUTER_MODEL_X'),
     }
 
     return config
@@ -57,37 +58,27 @@ def config_exists() -> bool:
 def get_available_sources(config: Dict[str, Any]) -> str:
     """Determine which sources are available based on API keys.
 
-    Returns: 'both', 'reddit', 'x', or 'web' (fallback when no keys)
+    Returns: 'both' or 'web' (fallback when no key)
     """
-    has_openai = bool(config.get('OPENAI_API_KEY'))
-    has_xai = bool(config.get('XAI_API_KEY'))
+    has_openrouter = bool(config.get('OPENROUTER_API_KEY'))
 
-    if has_openai and has_xai:
-        return 'both'
-    elif has_openai:
-        return 'reddit'
-    elif has_xai:
-        return 'x'
+    if has_openrouter:
+        return 'both'  # OpenRouter provides access to both Reddit and X
     else:
-        return 'web'  # Fallback: WebSearch only (no API keys needed)
+        return 'web'  # Fallback: WebSearch only (no API key)
 
 
 def get_missing_keys(config: Dict[str, Any]) -> str:
     """Determine which API keys are missing.
 
-    Returns: 'both', 'reddit', 'x', or 'none'
+    Returns: 'both' or 'none'
     """
-    has_openai = bool(config.get('OPENAI_API_KEY'))
-    has_xai = bool(config.get('XAI_API_KEY'))
+    has_openrouter = bool(config.get('OPENROUTER_API_KEY'))
 
-    if has_openai and has_xai:
+    if has_openrouter:
         return 'none'
-    elif has_openai:
-        return 'x'  # Missing xAI key
-    elif has_xai:
-        return 'reddit'  # Missing OpenAI key
     else:
-        return 'both'  # Missing both keys
+        return 'both'  # Missing OpenRouter key
 
 
 def validate_sources(requested: str, available: str, include_web: bool = False) -> tuple[str, Optional[str]]:
@@ -101,47 +92,35 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
     Returns:
         Tuple of (effective_sources, error_message)
     """
-    # WebSearch-only mode (no API keys)
+    # WebSearch-only mode (no API key)
     if available == 'web':
         if requested == 'auto':
             return 'web', None
         elif requested == 'web':
             return 'web', None
         else:
-            return 'web', f"No API keys configured. Using WebSearch fallback. Add keys to ~/.config/last30days/.env for Reddit/X."
+            return 'web', f"No OPENROUTER_API_KEY configured. Using WebSearch fallback. Add key to .env in project root."
 
     if requested == 'auto':
         # Add web to sources if include_web is set
         if include_web:
-            if available == 'both':
-                return 'all', None  # reddit + x + web
-            elif available == 'reddit':
-                return 'reddit-web', None
-            elif available == 'x':
-                return 'x-web', None
+            return 'all', None  # reddit + x + web
         return available, None
 
     if requested == 'web':
         return 'web', None
 
     if requested == 'both':
-        if available not in ('both',):
-            missing = 'xAI' if available == 'reddit' else 'OpenAI'
-            return 'none', f"Requested both sources but {missing} key is missing. Use --sources=auto to use available keys."
         if include_web:
             return 'all', None
         return 'both', None
 
     if requested == 'reddit':
-        if available == 'x':
-            return 'none', "Requested Reddit but only xAI key is available."
         if include_web:
             return 'reddit-web', None
         return 'reddit', None
 
     if requested == 'x':
-        if available == 'reddit':
-            return 'none', "Requested X but only OpenAI key is available."
         if include_web:
             return 'x-web', None
         return 'x', None

@@ -1,4 +1,4 @@
-"""xAI API client for X (Twitter) discovery."""
+"""OpenRouter API client for X (Twitter) discovery via xAI Grok."""
 
 import json
 import re
@@ -6,6 +6,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import http
+from .env import OPENROUTER_BASE_URL
 
 
 def _log_error(msg: str):
@@ -13,8 +14,8 @@ def _log_error(msg: str):
     sys.stderr.write(f"[X ERROR] {msg}\n")
     sys.stderr.flush()
 
-# xAI uses responses endpoint with Agent Tools API
-XAI_RESPONSES_URL = "https://api.x.ai/v1/responses"
+# OpenRouter Open Responses API endpoint
+OPENROUTER_RESPONSES_URL = f"{OPENROUTER_BASE_URL}/responses"
 
 # Depth configurations: (min, max) posts to request
 DEPTH_CONFIG = {
@@ -64,11 +65,11 @@ def search_x(
     depth: str = "default",
     mock_response: Optional[Dict] = None,
 ) -> Dict[str, Any]:
-    """Search X for relevant posts using xAI API with live search.
+    """Search X for relevant posts using OpenRouter with xAI Grok.
 
     Args:
-        api_key: xAI API key
-        model: Model to use
+        api_key: OpenRouter API key
+        model: Model to use (e.g., x-ai/grok-4.1-fast:online)
         topic: Search topic
         from_date: Start date (YYYY-MM-DD)
         to_date: End date (YYYY-MM-DD)
@@ -86,16 +87,19 @@ def search_x(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/last30days-skill",
+        "X-Title": "last30days-skill",
     }
 
     # Adjust timeout based on depth (generous for API response time)
     timeout = 90 if depth == "quick" else 120 if depth == "default" else 180
 
-    # Use Agent Tools API with x_search tool
+    # OpenRouter Open Responses API with web_search tool
+    # The :online suffix on Grok models enables X search capabilities
     payload = {
         "model": model,
         "tools": [
-            {"type": "x_search"}
+            {"type": "web_search"}
         ],
         "input": [
             {
@@ -111,11 +115,11 @@ def search_x(
         ],
     }
 
-    return http.post(XAI_RESPONSES_URL, payload, headers=headers, timeout=timeout)
+    return http.post(OPENROUTER_RESPONSES_URL, payload, headers=headers, timeout=timeout)
 
 
 def parse_x_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parse xAI response to extract X items.
+    """Parse OpenRouter/xAI response to extract X items.
 
     Args:
         response: Raw API response
@@ -129,7 +133,7 @@ def parse_x_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     if "error" in response and response["error"]:
         error = response["error"]
         err_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
-        _log_error(f"xAI API error: {err_msg}")
+        _log_error(f"OpenRouter API error: {err_msg}")
         if http.DEBUG:
             _log_error(f"Full error response: {json.dumps(response, indent=2)[:1000]}")
         return items

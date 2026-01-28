@@ -12,6 +12,7 @@ Options:
     --quick             Faster research with fewer sources (8-12 each)
     --deep              Comprehensive research with more sources (50-70 Reddit, 40-60 X)
     --debug             Enable verbose debug logging
+    --synth             Interactive mode: synthesize with Claude and generate prompts
 """
 
 import argparse
@@ -38,6 +39,7 @@ from lib import (
     render,
     schema,
     score,
+    synthesize,
     ui,
     websearch,
     xai_x,
@@ -62,7 +64,7 @@ def _search_reddit(
     depth: str,
     mock: bool,
 ) -> tuple:
-    """Search Reddit via OpenAI (runs in thread).
+    """Search Reddit via OpenRouter (runs in thread).
 
     Returns:
         Tuple of (reddit_items, raw_openai, error)
@@ -75,7 +77,7 @@ def _search_reddit(
     else:
         try:
             raw_openai = openai_reddit.search_reddit(
-                config["OPENAI_API_KEY"],
+                config["OPENROUTER_API_KEY"],
                 selected_models["openai"],
                 topic,
                 from_date,
@@ -98,7 +100,7 @@ def _search_reddit(
         if core.lower() != topic.lower():
             try:
                 retry_raw = openai_reddit.search_reddit(
-                    config["OPENAI_API_KEY"],
+                    config["OPENROUTER_API_KEY"],
                     selected_models["openai"],
                     core,
                     from_date, to_date,
@@ -125,7 +127,7 @@ def _search_x(
     depth: str,
     mock: bool,
 ) -> tuple:
-    """Search X via xAI (runs in thread).
+    """Search X via OpenRouter (runs in thread).
 
     Returns:
         Tuple of (x_items, raw_xai, error)
@@ -138,7 +140,7 @@ def _search_x(
     else:
         try:
             raw_xai = xai_x.search_x(
-                config["XAI_API_KEY"],
+                config["OPENROUTER_API_KEY"],
                 selected_models["xai"],
                 topic,
                 from_date,
@@ -312,6 +314,19 @@ def main():
         action="store_true",
         help="Include general web search alongside Reddit/X (lower weighted)",
     )
+    parser.add_argument(
+        "--synth",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="VISION",
+        help="Synthesize with Claude. Optionally provide your vision directly to skip interactive mode.",
+    )
+    parser.add_argument(
+        "--synth-model",
+        default="anthropic/claude-sonnet-4",
+        help="Claude model for synthesis (default: anthropic/claude-sonnet-4)",
+    )
 
     args = parser.parse_args()
 
@@ -476,6 +491,22 @@ def main():
 
     # Output result
     output_result(report, args.emit, web_needed, args.topic, from_date, to_date, missing_keys)
+
+    # Run interactive synthesis if requested
+    if args.synth:
+        # Convert schema objects to dicts for synthesis
+        reddit_dicts = [item.to_dict() if hasattr(item, 'to_dict') else item for item in deduped_reddit]
+        x_dicts = [item.to_dict() if hasattr(item, 'to_dict') else item for item in deduped_x]
+        # args.synth is True (interactive) or a string (vision provided directly)
+        vision = args.synth if isinstance(args.synth, str) else None
+        synthesize.run_interactive_session(
+            config["OPENROUTER_API_KEY"],
+            args.topic,
+            reddit_dicts,
+            x_dicts,
+            model=args.synth_model,
+            vision=vision,
+        )
 
 
 def output_result(

@@ -1,4 +1,4 @@
-"""OpenAI Responses API client for Reddit discovery."""
+"""OpenRouter API client for Reddit discovery via OpenAI models."""
 
 import json
 import re
@@ -6,6 +6,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import http
+from .env import OPENROUTER_BASE_URL
 
 
 def _log_error(msg: str):
@@ -13,7 +14,7 @@ def _log_error(msg: str):
     sys.stderr.write(f"[REDDIT ERROR] {msg}\n")
     sys.stderr.flush()
 
-OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+OPENROUTER_RESPONSES_URL = f"{OPENROUTER_BASE_URL}/responses"
 
 # Depth configurations: (min, max) threads to request
 # Request MORE than needed since many get filtered by date
@@ -86,11 +87,11 @@ def search_reddit(
     mock_response: Optional[Dict] = None,
     _retry: bool = False,
 ) -> Dict[str, Any]:
-    """Search Reddit for relevant threads using OpenAI Responses API.
+    """Search Reddit for relevant threads using OpenRouter with OpenAI models.
 
     Args:
-        api_key: OpenAI API key
-        model: Model to use
+        api_key: OpenRouter API key
+        model: Model to use (e.g., openai/gpt-5.2:online)
         topic: Search topic
         from_date: Start date (YYYY-MM-DD) - only include threads after this
         to_date: End date (YYYY-MM-DD) - only include threads before this
@@ -108,24 +109,21 @@ def search_reddit(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/last30days-skill",
+        "X-Title": "last30days-skill",
     }
 
-    # Adjust timeout based on depth (generous for OpenAI web_search which can be slow)
+    # Adjust timeout based on depth (generous for web_search which can be slow)
     timeout = 90 if depth == "quick" else 120 if depth == "default" else 180
 
-    # Note: allowed_domains accepts base domain, not subdomains
-    # We rely on prompt to filter out developers.reddit.com, etc.
+    # OpenRouter Open Responses API with web_search tool
     payload = {
         "model": model,
         "tools": [
             {
                 "type": "web_search",
-                "filters": {
-                    "allowed_domains": ["reddit.com"]
-                }
             }
         ],
-        "include": ["web_search_call.action.sources"],
         "input": REDDIT_SEARCH_PROMPT.format(
             topic=topic,
             from_date=from_date,
@@ -135,11 +133,11 @@ def search_reddit(
         ),
     }
 
-    return http.post(OPENAI_RESPONSES_URL, payload, headers=headers, timeout=timeout)
+    return http.post(OPENROUTER_RESPONSES_URL, payload, headers=headers, timeout=timeout)
 
 
 def parse_reddit_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parse OpenAI response to extract Reddit items.
+    """Parse OpenRouter response to extract Reddit items.
 
     Args:
         response: Raw API response
@@ -153,7 +151,7 @@ def parse_reddit_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     if "error" in response and response["error"]:
         error = response["error"]
         err_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
-        _log_error(f"OpenAI API error: {err_msg}")
+        _log_error(f"OpenRouter API error: {err_msg}")
         if http.DEBUG:
             _log_error(f"Full error response: {json.dumps(response, indent=2)[:1000]}")
         return items
@@ -188,7 +186,7 @@ def parse_reddit_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
                 break
 
     if not output_text:
-        print(f"[REDDIT WARNING] No output text found in OpenAI response. Keys present: {list(response.keys())}", flush=True)
+        print(f"[REDDIT WARNING] No output text found in OpenRouter response. Keys present: {list(response.keys())}", flush=True)
         return items
 
     # Extract JSON from the response
