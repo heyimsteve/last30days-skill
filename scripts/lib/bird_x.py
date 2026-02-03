@@ -127,11 +127,14 @@ def search_x(
     """
     count = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
 
+    # Build query with date filter using X's search syntax
+    # Bird doesn't support --since flag, but X search accepts since:YYYY-MM-DD in query
+    query = f"{topic} since:{from_date}"
+
     # Build command
     cmd = [
         "bird", "search",
-        topic,
-        "--since", from_date,
+        query,
         "-n", str(count),
         "--json",
     ]
