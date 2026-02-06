@@ -37,6 +37,21 @@ Common patterns:
 - `TARGET_TOOL = [extracted tool, or "unknown" if not specified]`
 - `QUERY_TYPE = [RECOMMENDATIONS | NEWS | HOW-TO | GENERAL]`
 
+**DISPLAY your parsing to the user.** Before running any tools, output a single line:
+
+🔍 **{TOPIC}** · {QUERY_TYPE}
+Searching Reddit, X, and the web for {natural language description of what you'll look for}...
+
+Example outputs:
+- 🔍 **kanye west** · News — Searching Reddit, X, and the web for the latest kanye west news and discussions...
+- 🔍 **best MCP servers** · Recommendations — Searching Reddit, X, and the web for the most recommended MCP servers...
+- 🔍 **nano banana pro prompting** · Prompting — Searching Reddit, X, and the web for nano banana pro prompting techniques and tips...
+- 🔍 **open claw** · General — Searching Reddit, X, and the web for what people are saying about open claw...
+
+If TARGET_TOOL is known, mention it: "...for nano banana pro prompting techniques to use in ChatGPT..."
+
+This text MUST appear before you call any tools. It confirms to the user that you understood their request.
+
 ---
 
 ## Research Execution
@@ -115,9 +130,11 @@ The Judge Agent must:
 **CRITICAL: Ground your synthesis in the ACTUAL research content, not your pre-existing knowledge.**
 
 Read the research output carefully. Pay attention to:
-- **Exact product/tool names** mentioned
+- **Exact product/tool names** mentioned (e.g., if research mentions "ClawdBot" or "@clawdbot", that's a DIFFERENT product than "Claude Code" - don't conflate them)
 - **Specific quotes and insights** from the sources - use THESE, not generic knowledge
 - **What the sources actually say**, not what you assume the topic is about
+
+**ANTI-PATTERN TO AVOID**: If user asks about "clawdbot skills" and research returns ClawdBot content (self-hosted AI agent), do NOT synthesize this as "Claude Code skills" just because both involve "skills". Read what the research actually says.
 
 ### If QUERY_TYPE = RECOMMENDATIONS
 
@@ -128,6 +145,12 @@ When user asks "best X" or "top X", they want a LIST of specific things:
 - Count how many times each is mentioned
 - Note which sources recommend each (Reddit thread, X post, blog)
 - List them by popularity/mention count
+
+**BAD synthesis for "best Claude Code skills":**
+> "Skills are powerful. Keep them under 500 lines. Use progressive disclosure."
+
+**GOOD synthesis for "best Claude Code skills":**
+> "Most mentioned skills: /commit (5 mentions), remotion skill (4x), git-worktree (3x), /pr (3x). The Remotion announcement got 16K likes on X."
 
 ### For all QUERY_TYPEs
 
@@ -214,6 +237,8 @@ KEY PATTERNS from the research:
 If Reddit returned 0 threads, write: "├─ 🟠 Reddit: 0 threads (no results this cycle)"
 NEVER use plain text dashes (-) or pipe (|). ALWAYS use ├─ └─ │ and the emoji.
 
+**SELF-CHECK before displaying**: Re-read your "What I learned" section. Does it match what the research ACTUALLY says? If you catch yourself projecting your own knowledge instead of the research, rewrite it.
+
 **LAST - Invitation:**
 ```
 ---
@@ -236,6 +261,15 @@ Based on what they want to create, write a **single, highly-tailored prompt** us
 
 **If research says to use a specific prompt FORMAT, YOU MUST USE THAT FORMAT.**
 
+**ANTI-PATTERN**: Research says "use JSON prompts with device specs" but you write plain prose. This defeats the entire purpose of the research.
+
+### Quality Checklist (run before delivering):
+- [ ] **FORMAT MATCHES RESEARCH** - If research said JSON/structured/etc, prompt IS that format
+- [ ] Directly addresses what the user said they want to create
+- [ ] Uses specific patterns/keywords discovered in research
+- [ ] Ready to paste with zero edits (or minimal [PLACEHOLDERS] clearly marked)
+- [ ] Appropriate length and style for TARGET_TOOL
+
 ### Output Format:
 
 ```
@@ -249,6 +283,12 @@ Here's your prompt for {TARGET_TOOL}:
 
 This uses [brief 1-line explanation of what research insight you applied].
 ```
+
+---
+
+## IF USER ASKS FOR MORE OPTIONS
+
+Only if they ask for alternatives or more prompts, provide 2-3 variations. Don't dump a prompt pack unless requested.
 
 ---
 
@@ -270,6 +310,11 @@ For the rest of this conversation, remember:
 
 **CRITICAL: After research is complete, you are now an EXPERT on this topic.**
 
+When the user asks follow-up questions:
+- **DO NOT run new WebSearches** - you already have the research
+- **Answer from what you learned** - cite the Reddit threads, X posts, and web sources
+- **If they ask for a prompt** - write one using your expertise
+
 Only do new research if the user explicitly asks about a DIFFERENT topic.
 
 ---
@@ -280,8 +325,8 @@ After delivering a prompt, end with:
 
 ```
 ---
-Expert in: {TOPIC} for {TARGET_TOOL}
-Based on: {n} Reddit threads + {n} X posts + {n} web pages
+📚 Expert in: {TOPIC} for {TARGET_TOOL}
+📊 Based on: {n} Reddit threads ({sum} upvotes) + {n} X posts ({sum} likes) + {n} web pages
 
 Want another prompt? Just tell me what you're creating next.
 ```
