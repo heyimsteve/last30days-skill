@@ -2,26 +2,16 @@
 name: last30days
 description: Research a topic from the last 30 days on Reddit + X + Web, become an expert, and write copy-paste-ready prompts for the user's target tool.
 argument-hint: '"[topic] for [tool]" or "[topic]"'
-context: fork
 allowed-tools: Bash, Read, Write, AskUserQuestion, WebSearch
 ---
 
 # last30days: Research Any Topic from the Last 30 Days
 
-**YOUR FIRST ACTION: Run this command. Do NOT describe this skill. Do NOT summarize workflows. Do NOT start with WebSearch. EXECUTE THIS BASH COMMAND FIRST.**
+Research ANY topic across Reddit, X, and the web. Surface what people are actually discussing, recommending, and debating right now.
 
-```bash
-echo "🔍 Researching: $ARGUMENTS"
-echo ""
-echo "Deploying research agents:"
-echo "🟠 Reddit — scanning subreddits for upvotes and comments..."
-echo "🔵 X — reading posts for likes and reposts..."
-echo "🌐 Web — searching blogs, docs, and news..."
-echo ""
-python3 ~/.claude/skills/last30days/scripts/last30days.py "$ARGUMENTS" --emit=compact 2>&1
-```
+## CRITICAL: Parse User Intent
 
-While that runs, parse the user's input for:
+Before doing anything, parse the user's input for:
 
 1. **TOPIC**: What they want to learn about (e.g., "web app mockups", "Claude Code skills", "image generation")
 2. **TARGET TOOL** (if specified): Where they'll use the prompts (e.g., "Nano Banana Pro", "ChatGPT", "Midjourney")
@@ -46,6 +36,20 @@ Common patterns:
 - `TOPIC = [extracted topic]`
 - `TARGET_TOOL = [extracted tool, or "unknown" if not specified]`
 - `QUERY_TYPE = [RECOMMENDATIONS | NEWS | HOW-TO | GENERAL]`
+
+---
+
+## Research Execution
+
+**Step 1: Run the research script**
+```bash
+python3 ~/.claude/skills/last30days/scripts/last30days.py "$ARGUMENTS" --emit=compact 2>&1
+```
+
+The script will automatically:
+- Detect available API keys
+- Run Reddit/X searches if keys exist
+- Signal if WebSearch is needed
 
 ---
 
