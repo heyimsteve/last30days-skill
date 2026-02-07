@@ -46,6 +46,8 @@ Parsed intent:
 - TOPIC = {TOPIC}
 - TARGET_TOOL = {TARGET_TOOL or "unknown"}
 - QUERY_TYPE = {QUERY_TYPE}
+
+Research typically takes 2-8 minutes (niche topics take longer). Starting now.
 ```
 
 If TARGET_TOOL is known, mention it in the intro: "...to find {QUERY_TYPE}-style content for use in {TARGET_TOOL}."
