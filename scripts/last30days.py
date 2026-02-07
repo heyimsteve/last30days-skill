@@ -30,6 +30,7 @@ from lib import (
     bird_x,
     dates,
     dedupe,
+    entity_extract,
     env,
     http,
     models,
@@ -205,6 +206,129 @@ def _search_x(
     return x_items, raw_response, x_error
 
 
+def _run_supplemental(
+    topic: str,
+    reddit_items: list,
+    x_items: list,
+    from_date: str,
+    to_date: str,
+    depth: str,
+    x_source: str,
+    progress: ui.ProgressDisplay = None,
+) -> tuple:
+    """Run Phase 2 supplemental searches based on entities from Phase 1.
+
+    Extracts handles/subreddits from initial results, then runs targeted
+    searches to find additional content the broad search missed.
+
+    Args:
+        topic: Original search topic
+        reddit_items: Phase 1 Reddit items (raw dicts)
+        x_items: Phase 1 X items (raw dicts)
+        from_date: Start date
+        to_date: End date
+        depth: Research depth
+        x_source: 'bird' or 'xai'
+        progress: Optional progress display
+
+    Returns:
+        Tuple of (supplemental_reddit, supplemental_x)
+    """
+    # Depth-dependent caps
+    if depth == "default":
+        max_handles = 3
+        max_subs = 3
+        count_per = 3
+    else:  # deep
+        max_handles = 5
+        max_subs = 5
+        count_per = 5
+
+    # Extract entities from Phase 1 results
+    entities = entity_extract.extract_entities(
+        reddit_items, x_items,
+        max_handles=max_handles,
+        max_subreddits=max_subs,
+    )
+
+    has_handles = entities["x_handles"] and x_source == "bird"
+    has_subs = entities["reddit_subreddits"]
+
+    if not has_handles and not has_subs:
+        return [], []
+
+    parts = []
+    if has_handles:
+        parts.append(f"@{', @'.join(entities['x_handles'][:3])}")
+    if has_subs:
+        parts.append(f"r/{', r/'.join(entities['reddit_subreddits'][:3])}")
+    sys.stderr.write(f"[Phase 2] Drilling into {' + '.join(parts)}\n")
+    sys.stderr.flush()
+
+    supplemental_reddit = []
+    supplemental_x = []
+
+    # Collect existing URLs to avoid adding duplicates before dedupe
+    existing_urls = set()
+    for item in reddit_items:
+        existing_urls.add(item.get("url", ""))
+    for item in x_items:
+        existing_urls.add(item.get("url", ""))
+
+    # Run supplemental searches in parallel
+    reddit_future = None
+    x_future = None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        if has_subs:
+            reddit_future = executor.submit(
+                openai_reddit.search_subreddits,
+                entities["reddit_subreddits"],
+                topic,
+                from_date,
+                to_date,
+                count_per,
+            )
+
+        if has_handles:
+            x_future = executor.submit(
+                bird_x.search_handles,
+                entities["x_handles"],
+                topic,
+                from_date,
+                count_per,
+            )
+
+        if reddit_future:
+            try:
+                raw_reddit = reddit_future.result()
+                # Filter out URLs already found in Phase 1
+                supplemental_reddit = [
+                    item for item in raw_reddit
+                    if item.get("url", "") not in existing_urls
+                ]
+            except Exception as e:
+                sys.stderr.write(f"[Phase 2] Supplemental Reddit error: {e}\n")
+
+        if x_future:
+            try:
+                raw_x = x_future.result()
+                supplemental_x = [
+                    item for item in raw_x
+                    if item.get("url", "") not in existing_urls
+                ]
+            except Exception as e:
+                sys.stderr.write(f"[Phase 2] Supplemental X error: {e}\n")
+
+    if supplemental_reddit or supplemental_x:
+        sys.stderr.write(
+            f"[Phase 2] +{len(supplemental_reddit)} Reddit, +{len(supplemental_x)} X\n"
+        )
+        sys.stderr.flush()
+
+    return supplemental_reddit, supplemental_x
+
+
 def run_research(
     topic: str,
     sources: str,
@@ -318,6 +442,18 @@ def run_research(
 
         if progress:
             progress.end_reddit_enrich()
+
+    # Phase 2: Supplemental search based on entities from Phase 1
+    # Skip on --quick (speed matters) and mock mode
+    if depth != "quick" and not mock and (reddit_items or x_items):
+        sup_reddit, sup_x = _run_supplemental(
+            topic, reddit_items, x_items,
+            from_date, to_date, depth, x_source, progress,
+        )
+        if sup_reddit:
+            reddit_items.extend(sup_reddit)
+        if sup_x:
+            x_items.extend(sup_x)
 
     return reddit_items, x_items, web_needed, raw_openai, raw_xai, raw_reddit_enriched, reddit_error, x_error
 

@@ -198,6 +198,87 @@ def search_reddit(
     raise http.HTTPError("No models available")
 
 
+def search_subreddits(
+    subreddits: List[str],
+    topic: str,
+    from_date: str,
+    to_date: str,
+    count_per: int = 5,
+) -> List[Dict[str, Any]]:
+    """Search specific subreddits via Reddit's free JSON endpoint.
+
+    No API key needed. Uses reddit.com/r/{sub}/search/.json endpoint.
+    Used in Phase 2 supplemental search after entity extraction.
+
+    Args:
+        subreddits: List of subreddit names (without r/)
+        topic: Search topic
+        from_date: Start date (YYYY-MM-DD)
+        to_date: End date (YYYY-MM-DD)
+        count_per: Results to request per subreddit
+
+    Returns:
+        List of raw item dicts (same format as parse_reddit_response output).
+    """
+    all_items = []
+    core = _extract_core_subject(topic)
+
+    for sub in subreddits:
+        sub = sub.lstrip("r/")
+        try:
+            url = f"https://www.reddit.com/r/{sub}/search/.json"
+            params = f"q={_url_encode(core)}&restrict_sr=on&sort=new&limit={count_per}&raw_json=1"
+            full_url = f"{url}?{params}"
+
+            headers = {
+                "User-Agent": http.USER_AGENT,
+                "Accept": "application/json",
+            }
+
+            data = http.get(full_url, headers=headers, timeout=15)
+
+            # Reddit search returns {"data": {"children": [...]}}
+            children = data.get("data", {}).get("children", [])
+            for i, child in enumerate(children):
+                if child.get("kind") != "t3":  # t3 = link/submission
+                    continue
+                post = child.get("data", {})
+                permalink = post.get("permalink", "")
+                if not permalink:
+                    continue
+
+                item = {
+                    "id": f"RS{len(all_items)+1}",
+                    "title": str(post.get("title", "")).strip(),
+                    "url": f"https://www.reddit.com{permalink}",
+                    "subreddit": str(post.get("subreddit", sub)).strip(),
+                    "date": None,
+                    "why_relevant": f"Found in r/{sub} supplemental search",
+                    "relevance": 0.65,  # Slightly lower default for supplemental
+                }
+
+                # Parse date from created_utc
+                created_utc = post.get("created_utc")
+                if created_utc:
+                    from . import dates as dates_mod
+                    item["date"] = dates_mod.timestamp_to_date(created_utc)
+
+                all_items.append(item)
+
+        except http.HTTPError as e:
+            _log_info(f"Subreddit search failed for r/{sub}: {e}")
+        except Exception as e:
+            _log_info(f"Subreddit search error for r/{sub}: {e}")
+
+    return all_items
+
+
+def _url_encode(text: str) -> str:
+    """Simple URL encoding for query parameters."""
+    import urllib.parse
+    return urllib.parse.quote_plus(text)
+
+
 def parse_reddit_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Parse OpenAI response to extract Reddit items.
 

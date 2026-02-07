@@ -190,6 +190,70 @@ def search_x(
         return {"error": str(e), "items": []}
 
 
+def search_handles(
+    handles: List[str],
+    topic: str,
+    from_date: str,
+    count_per: int = 5,
+) -> List[Dict[str, Any]]:
+    """Search specific X handles for topic-related content.
+
+    Runs targeted Bird searches using `from:handle topic` syntax.
+    Used in Phase 2 supplemental search after entity extraction.
+
+    Args:
+        handles: List of X handles to search (without @)
+        topic: Search topic (core subject, not full verbose query)
+        from_date: Start date (YYYY-MM-DD)
+        count_per: Results to request per handle
+
+    Returns:
+        List of raw item dicts (same format as parse_bird_response output).
+    """
+    all_items = []
+    core_topic = _extract_core_subject(topic)
+
+    for handle in handles:
+        handle = handle.lstrip("@")
+        query = f"from:{handle} {core_topic} since:{from_date}"
+
+        cmd = [
+            "bird", "search",
+            query,
+            "-n", str(count_per),
+            "--json",
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15,  # Short timeout per handle
+            )
+
+            if result.returncode != 0:
+                _log(f"Handle search failed for @{handle}: {result.stderr.strip()}")
+                continue
+
+            output = result.stdout.strip()
+            if not output:
+                continue
+
+            response = json.loads(output)
+            items = parse_bird_response(response)
+            all_items.extend(items)
+
+        except subprocess.TimeoutExpired:
+            _log(f"Handle search timed out for @{handle}")
+        except json.JSONDecodeError:
+            _log(f"Invalid JSON from handle search for @{handle}")
+        except Exception as e:
+            _log(f"Handle search error for @{handle}: {e}")
+
+    return all_items
+
+
 def parse_bird_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Parse Bird response to match xai_x output format.
 
