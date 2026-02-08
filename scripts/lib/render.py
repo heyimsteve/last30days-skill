@@ -86,11 +86,11 @@ def render_compact(report: schema.Report, limit: int = 15, missing_keys: str = "
     lines.append("")
 
     # Coverage note for partial coverage
-    if report.mode == "reddit-only" and missing_keys == "x":
-        lines.append("*💡 Tip: Add XAI_API_KEY for X/Twitter data and better triangulation.*")
+    if report.mode == "reddit-only":
+        lines.append("*💡 Tip: Add xAI key (or OPENROUTER_API_KEY) for X/Twitter data and better triangulation.*")
         lines.append("")
-    elif report.mode == "x-only" and missing_keys == "reddit":
-        lines.append("*💡 Tip: Add OPENAI_API_KEY for Reddit data and better triangulation.*")
+    elif report.mode == "x-only":
+        lines.append("*💡 Tip: Add OpenAI key (or OPENROUTER_API_KEY) for Reddit data and better triangulation.*")
         lines.append("")
 
     # Reddit items

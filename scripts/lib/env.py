@@ -4,12 +4,25 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-# Config file is at project root (.env)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
-CONFIG_FILE = PROJECT_ROOT / ".env"
-
 # OpenRouter base URL for Open Responses API
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Allow override via environment variable for testing
+# Set LAST30DAYS_CONFIG_DIR="" for clean/no-config mode
+# Set LAST30DAYS_CONFIG_DIR="/path/to/dir" for custom config location
+_config_override = os.environ.get('LAST30DAYS_CONFIG_DIR')
+if _config_override == "":
+    # Empty string = no config file (clean mode)
+    CONFIG_DIR = None
+    CONFIG_FILE = None
+elif _config_override:
+    CONFIG_DIR = Path(_config_override)
+    CONFIG_FILE = CONFIG_DIR / ".env"
+else:
+    # Default: project-root .env (OpenRouter mode)
+    PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+    CONFIG_DIR = PROJECT_ROOT
+    CONFIG_FILE = PROJECT_ROOT / ".env"
 
 
 def load_env_file(path: Path) -> Dict[str, str]:
@@ -36,11 +49,11 @@ def load_env_file(path: Path) -> Dict[str, str]:
 
 
 def get_config() -> Dict[str, Any]:
-    """Load configuration from ~/.config/last30days/.env and environment."""
-    # Load from config file first
-    file_env = load_env_file(CONFIG_FILE)
+    """Load configuration from .env and environment."""
+    # Load from config file first (if configured)
+    file_env = load_env_file(CONFIG_FILE) if CONFIG_FILE else {}
 
-    # Environment variables override file - now uses single OpenRouter key
+    # Environment variables override file - single OpenRouter key setup
     config = {
         'OPENROUTER_API_KEY': os.environ.get('OPENROUTER_API_KEY') or file_env.get('OPENROUTER_API_KEY'),
         'OPENROUTER_MODEL_REDDIT': os.environ.get('OPENROUTER_MODEL_REDDIT') or file_env.get('OPENROUTER_MODEL_REDDIT'),
@@ -52,7 +65,7 @@ def get_config() -> Dict[str, Any]:
 
 def config_exists() -> bool:
     """Check if configuration file exists."""
-    return CONFIG_FILE.exists()
+    return bool(CONFIG_FILE and CONFIG_FILE.exists())
 
 
 def get_available_sources(config: Dict[str, Any]) -> str:
@@ -64,21 +77,16 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 
     if has_openrouter:
         return 'both'  # OpenRouter provides access to both Reddit and X
-    else:
-        return 'web'  # Fallback: WebSearch only (no API key)
+    return 'web'  # Fallback: WebSearch only (no API key)
 
 
 def get_missing_keys(config: Dict[str, Any]) -> str:
-    """Determine which API keys are missing.
+    """Determine which sources are missing.
 
     Returns: 'both' or 'none'
     """
     has_openrouter = bool(config.get('OPENROUTER_API_KEY'))
-
-    if has_openrouter:
-        return 'none'
-    else:
-        return 'both'  # Missing OpenRouter key
+    return 'none' if has_openrouter else 'both'
 
 
 def validate_sources(requested: str, available: str, include_web: bool = False) -> tuple[str, Optional[str]]:
@@ -96,13 +104,11 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
     if available == 'web':
         if requested == 'auto':
             return 'web', None
-        elif requested == 'web':
+        if requested == 'web':
             return 'web', None
-        else:
-            return 'web', f"No OPENROUTER_API_KEY configured. Using WebSearch fallback. Add key to .env in project root."
+        return 'web', "No OPENROUTER_API_KEY configured. Using WebSearch fallback. Add key to .env in project root."
 
     if requested == 'auto':
-        # Add web to sources if include_web is set
         if include_web:
             return 'all', None  # reddit + x + web
         return available, None
@@ -126,3 +132,45 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
         return 'x', None
 
     return requested, None
+
+
+def get_x_source(config: Dict[str, Any]) -> Optional[str]:
+    """Determine the best available X/Twitter source.
+
+    Priority: Bird (free) → OpenRouter (paid API)
+    """
+    from . import bird_x
+
+    if bird_x.is_bird_installed():
+        username = bird_x.is_bird_authenticated()
+        if username:
+            return 'bird'
+
+    if config.get('OPENROUTER_API_KEY'):
+        return 'xai'
+
+    return None
+
+
+def get_x_source_status(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Get detailed X source status for UI decisions."""
+    from . import bird_x
+
+    bird_status = bird_x.get_bird_status()
+    openrouter_available = bool(config.get('OPENROUTER_API_KEY'))
+
+    if bird_status["authenticated"]:
+        source = 'bird'
+    elif openrouter_available:
+        source = 'xai'
+    else:
+        source = None
+
+    return {
+        "source": source,
+        "bird_installed": bird_status["installed"],
+        "bird_authenticated": bird_status["authenticated"],
+        "bird_username": bird_status["username"],
+        "xai_available": openrouter_available,
+        "can_install_bird": bird_status["can_install"],
+    }

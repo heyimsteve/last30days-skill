@@ -28,8 +28,10 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from lib import (
+    bird_x,
     dates,
     dedupe,
+    entity_extract,
     env,
     http,
     models,
@@ -115,6 +117,25 @@ def _search_reddit(
             except Exception:
                 pass
 
+    # Subreddit-targeted fallback if still < 3 results
+    if len(reddit_items) < 3 and not mock and not reddit_error:
+        sub_query = openai_reddit._build_subreddit_query(topic)
+        try:
+            sub_raw = openai_reddit.search_reddit(
+                config["OPENROUTER_API_KEY"],
+                selected_models["openai"],
+                sub_query,
+                from_date, to_date,
+                depth=depth,
+            )
+            sub_items = openai_reddit.parse_reddit_response(sub_raw)
+            existing_urls = {item.get("url") for item in reddit_items}
+            for item in sub_items:
+                if item.get("url") not in existing_urls:
+                    reddit_items.append(item)
+        except Exception:
+            pass
+
     return reddit_items, raw_openai, reddit_error
 
 
@@ -126,38 +147,188 @@ def _search_x(
     to_date: str,
     depth: str,
     mock: bool,
+    x_source: str = "xai",
 ) -> tuple:
-    """Search X via OpenRouter (runs in thread).
+    """Search X via Bird CLI or OpenRouter xAI model (runs in thread).
+
+    Args:
+        x_source: 'bird' or 'xai' - which backend to use
 
     Returns:
-        Tuple of (x_items, raw_xai, error)
+        Tuple of (x_items, raw_response, error)
     """
-    raw_xai = None
+    raw_response = None
     x_error = None
 
     if mock:
-        raw_xai = load_fixture("xai_sample.json")
-    else:
+        raw_response = load_fixture("xai_sample.json")
+        x_items = xai_x.parse_x_response(raw_response or {})
+        return x_items, raw_response, x_error
+
+    # Use Bird if specified
+    if x_source == "bird":
         try:
-            raw_xai = xai_x.search_x(
-                config["OPENROUTER_API_KEY"],
-                selected_models["xai"],
+            raw_response = bird_x.search_x(
                 topic,
                 from_date,
                 to_date,
                 depth=depth,
             )
-        except http.HTTPError as e:
-            raw_xai = {"error": str(e)}
-            x_error = f"API error: {e}"
         except Exception as e:
-            raw_xai = {"error": str(e)}
+            raw_response = {"error": str(e)}
             x_error = f"{type(e).__name__}: {e}"
 
-    # Parse response
-    x_items = xai_x.parse_x_response(raw_xai or {})
+        x_items = bird_x.parse_bird_response(raw_response or {})
 
-    return x_items, raw_xai, x_error
+        # Check for error in response (Bird returns list on success, dict on error)
+        if raw_response and isinstance(raw_response, dict) and raw_response.get("error") and not x_error:
+            x_error = raw_response["error"]
+
+        return x_items, raw_response, x_error
+
+    # Use xAI (original behavior)
+    try:
+        raw_response = xai_x.search_x(
+            config["OPENROUTER_API_KEY"],
+            selected_models["xai"],
+            topic,
+            from_date,
+            to_date,
+            depth=depth,
+        )
+    except http.HTTPError as e:
+        raw_response = {"error": str(e)}
+        x_error = f"API error: {e}"
+    except Exception as e:
+        raw_response = {"error": str(e)}
+        x_error = f"{type(e).__name__}: {e}"
+
+    x_items = xai_x.parse_x_response(raw_response or {})
+
+    return x_items, raw_response, x_error
+
+
+def _run_supplemental(
+    topic: str,
+    reddit_items: list,
+    x_items: list,
+    from_date: str,
+    to_date: str,
+    depth: str,
+    x_source: str,
+    progress: ui.ProgressDisplay = None,
+) -> tuple:
+    """Run Phase 2 supplemental searches based on entities from Phase 1.
+
+    Extracts handles/subreddits from initial results, then runs targeted
+    searches to find additional content the broad search missed.
+
+    Args:
+        topic: Original search topic
+        reddit_items: Phase 1 Reddit items (raw dicts)
+        x_items: Phase 1 X items (raw dicts)
+        from_date: Start date
+        to_date: End date
+        depth: Research depth
+        x_source: 'bird' or 'xai'
+        progress: Optional progress display
+
+    Returns:
+        Tuple of (supplemental_reddit, supplemental_x)
+    """
+    # Depth-dependent caps
+    if depth == "default":
+        max_handles = 3
+        max_subs = 3
+        count_per = 3
+    else:  # deep
+        max_handles = 5
+        max_subs = 5
+        count_per = 5
+
+    # Extract entities from Phase 1 results
+    entities = entity_extract.extract_entities(
+        reddit_items, x_items,
+        max_handles=max_handles,
+        max_subreddits=max_subs,
+    )
+
+    has_handles = entities["x_handles"] and x_source == "bird"
+    has_subs = entities["reddit_subreddits"]
+
+    if not has_handles and not has_subs:
+        return [], []
+
+    parts = []
+    if has_handles:
+        parts.append(f"@{', @'.join(entities['x_handles'][:3])}")
+    if has_subs:
+        parts.append(f"r/{', r/'.join(entities['reddit_subreddits'][:3])}")
+    sys.stderr.write(f"[Phase 2] Drilling into {' + '.join(parts)}\n")
+    sys.stderr.flush()
+
+    supplemental_reddit = []
+    supplemental_x = []
+
+    # Collect existing URLs to avoid adding duplicates before dedupe
+    existing_urls = set()
+    for item in reddit_items:
+        existing_urls.add(item.get("url", ""))
+    for item in x_items:
+        existing_urls.add(item.get("url", ""))
+
+    # Run supplemental searches in parallel
+    reddit_future = None
+    x_future = None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        if has_subs:
+            reddit_future = executor.submit(
+                openai_reddit.search_subreddits,
+                entities["reddit_subreddits"],
+                topic,
+                from_date,
+                to_date,
+                count_per,
+            )
+
+        if has_handles:
+            x_future = executor.submit(
+                bird_x.search_handles,
+                entities["x_handles"],
+                topic,
+                from_date,
+                count_per,
+            )
+
+        if reddit_future:
+            try:
+                raw_reddit = reddit_future.result()
+                # Filter out URLs already found in Phase 1
+                supplemental_reddit = [
+                    item for item in raw_reddit
+                    if item.get("url", "") not in existing_urls
+                ]
+            except Exception as e:
+                sys.stderr.write(f"[Phase 2] Supplemental Reddit error: {e}\n")
+
+        if x_future:
+            try:
+                raw_x = x_future.result()
+                supplemental_x = [
+                    item for item in raw_x
+                    if item.get("url", "") not in existing_urls
+                ]
+            except Exception as e:
+                sys.stderr.write(f"[Phase 2] Supplemental X error: {e}\n")
+
+    if supplemental_reddit or supplemental_x:
+        sys.stderr.write(
+            f"[Phase 2] +{len(supplemental_reddit)} Reddit, +{len(supplemental_x)} X\n"
+        )
+        sys.stderr.flush()
+
+    return supplemental_reddit, supplemental_x
 
 
 def run_research(
@@ -170,6 +341,7 @@ def run_research(
     depth: str = "default",
     mock: bool = False,
     progress: ui.ProgressDisplay = None,
+    x_source: str = "xai",
 ) -> tuple:
     """Run the research pipeline.
 
@@ -220,7 +392,7 @@ def run_research(
                 progress.start_x()
             x_future = executor.submit(
                 _search_x, topic, config, selected_models,
-                from_date, to_date, depth, mock
+                from_date, to_date, depth, mock, x_source
             )
 
         # Collect results
@@ -273,12 +445,29 @@ def run_research(
         if progress:
             progress.end_reddit_enrich()
 
+    # Phase 2: Supplemental search based on entities from Phase 1
+    # Skip on --quick (speed matters) and mock mode
+    if depth != "quick" and not mock and (reddit_items or x_items):
+        sup_reddit, sup_x = _run_supplemental(
+            topic, reddit_items, x_items,
+            from_date, to_date, depth, x_source, progress,
+        )
+        if sup_reddit:
+            reddit_items.extend(sup_reddit)
+        if sup_x:
+            x_items.extend(sup_x)
+
     return reddit_items, x_items, web_needed, raw_openai, raw_xai, raw_reddit_enriched, reddit_error, x_error
 
 
 def main():
+    # Fix Unicode output on Windows (cp1252 can't encode emoji)
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
-        description="Research a topic from the last 30 days on Reddit + X"
+        description="Research a topic from the last N days on Reddit + X"
     )
     parser.add_argument("topic", nargs="?", help="Topic to research")
     parser.add_argument("--mock", action="store_true", help="Use fixtures")
@@ -315,6 +504,14 @@ def main():
         help="Include general web search alongside Reddit/X (lower weighted)",
     )
     parser.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        choices=range(1, 31),
+        metavar="N",
+        help="Number of days to look back (1-30, default: 30)",
+    )
+    parser.add_argument(
         "--synth",
         nargs="?",
         const=True,
@@ -348,6 +545,7 @@ def main():
     else:
         depth = "default"
 
+    # Validate topic first (matches original NUX)
     if not args.topic:
         print("Error: Please provide a topic to research.", file=sys.stderr)
         print("Usage: python3 last30days.py <topic> [options]", file=sys.stderr)
@@ -356,8 +554,22 @@ def main():
     # Load config
     config = env.get_config()
 
-    # Check available sources
+    # Auto-detect Bird (no prompts - just use it if available)
+    x_source_status = env.get_x_source_status(config)
+    x_source = x_source_status["source"]  # 'bird', 'xai', or None
+
+    # Initialize progress display with topic
+    progress = ui.ProgressDisplay(args.topic, show_banner=True)
+
+    # Check available sources (accounting for Bird auto-detection)
     available = env.get_available_sources(config)
+
+    # Override available if Bird is ready
+    if x_source == 'bird':
+        if available == 'reddit':
+            available = 'both'  # Now have both Reddit + X (via Bird)
+        elif available == 'web':
+            available = 'x'  # Now have X via Bird
 
     # Mock mode can work without keys
     if args.mock:
@@ -377,13 +589,10 @@ def main():
                 sys.exit(1)
 
     # Get date range
-    from_date, to_date = dates.get_date_range(30)
+    from_date, to_date = dates.get_date_range(args.days)
 
     # Check what keys are missing for promo messaging
     missing_keys = env.get_missing_keys(config)
-
-    # Initialize progress display
-    progress = ui.ProgressDisplay(args.topic, show_banner=True)
 
     # Show promo for missing keys BEFORE research
     if missing_keys != 'none':
@@ -396,8 +605,7 @@ def main():
         mock_xai_models = load_fixture("models_xai_sample.json").get("data", [])
         selected_models = models.get_models(
             {
-                "OPENAI_API_KEY": "mock",
-                "XAI_API_KEY": "mock",
+                "OPENROUTER_API_KEY": "mock",
                 **config,
             },
             mock_openai_models,
@@ -435,6 +643,7 @@ def main():
         depth,
         args.mock,
         progress,
+        x_source=x_source or "xai",
     )
 
     # Processing phase
@@ -460,6 +669,13 @@ def main():
     # Dedupe items
     deduped_reddit = dedupe.dedupe_reddit(sorted_reddit)
     deduped_x = dedupe.dedupe_x(sorted_x)
+
+    # Minimum result guarantee: if all Reddit results were filtered out but
+    # we had raw results, keep top 3 by relevance regardless of score
+    if not deduped_reddit and normalized_reddit:
+        print("[REDDIT WARNING] All results scored below threshold, keeping top 3 by relevance", file=sys.stderr)
+        by_relevance = sorted(normalized_reddit, key=lambda item: item.relevance, reverse=True)
+        deduped_reddit = by_relevance[:3]
 
     progress.end_processing()
 
@@ -490,7 +706,7 @@ def main():
         progress.show_complete(len(deduped_reddit), len(deduped_x))
 
     # Output result
-    output_result(report, args.emit, web_needed, args.topic, from_date, to_date, missing_keys)
+    output_result(report, args.emit, web_needed, args.topic, from_date, to_date, missing_keys, args.days)
 
     # Run interactive synthesis if requested
     if args.synth:
@@ -517,6 +733,7 @@ def output_result(
     from_date: str = "",
     to_date: str = "",
     missing_keys: str = "none",
+    days: int = 30,
 ):
     """Output the result based on emit mode."""
     if emit_mode == "compact":
@@ -540,7 +757,7 @@ def output_result(
         print("")
         print("Claude: Use your WebSearch tool to find 8-15 relevant web pages.")
         print("EXCLUDE: reddit.com, x.com, twitter.com (already covered above)")
-        print("INCLUDE: blogs, docs, news, tutorials from the last 30 days")
+        print(f"INCLUDE: blogs, docs, news, tutorials from the last {days} days")
         print("")
         print("After searching, synthesize WebSearch results WITH the Reddit/X")
         print("results above. WebSearch items should rank LOWER than comparable")
