@@ -1,6 +1,10 @@
-# /last30days
+# /last30days v2
 
 **The AI world reinvents itself every month. This Claude Code skill keeps you current.** /last30days researches your topic across Reddit, X, and the web from the last 30 days, finds what the community is actually upvoting and sharing, and writes you a prompt that works today, not six months ago. Whether it's Ralph Wiggum loops, Suno music prompts, or the latest Midjourney techniques, you'll prompt like someone who's been paying attention.
+
+**New in V2:** Dramatically better search results. Smarter query construction finds posts that V1 missed entirely, and a new two-phase search automatically discovers key @handles and subreddits from initial results, then drills deeper. Also: free X search via [Bird CLI](https://github.com/steipete/bird) (no xAI key needed), `--days=N` for flexible lookback, and automatic model fallback. [Full changelog below.](#whats-new-in-v2)
+
+**The tradeoff:** V2 finds way more content but takes longer — typically 2-8 minutes depending on how niche your topic is. The old V1 was faster but regularly missed results (like returning 0 X posts on trending topics). We think the depth is worth the wait, but if you'd use a faster "quick mode" that trades some depth for speed, let us know: [@mvanhorn](https://x.com/mvanhorn) / [@slashlast30days](https://x.com/slashlast30days).
 
 **Best for prompt research**: discover what prompting techniques actually work for any tool (ChatGPT, Midjourney, Claude, Figma AI, etc.) by learning from real community discussions and best practices.
 
@@ -16,10 +20,21 @@ git clone https://github.com/mvanhorn/last30days-skill.git ~/.claude/skills/last
 mkdir -p ~/.config/last30days
 cat > ~/.config/last30days/.env << 'EOF'
 OPENAI_API_KEY=sk-...
-XAI_API_KEY=xai-...
+XAI_API_KEY=xai-...       # optional if using Bird CLI
 EOF
 chmod 600 ~/.config/last30days/.env
 ```
+
+### Optional: Bird CLI for free X search
+
+[Bird CLI](https://github.com/steipete/bird) lets you search X without an xAI API key. If installed and authenticated, /last30days uses it automatically.
+
+```bash
+npm install -g @steipete/bird
+bird login
+```
+
+Bird is free and doesn't require an xAI key. If both Bird and an xAI key are available, Bird is preferred.
 
 ## Usage
 
@@ -46,6 +61,137 @@ Examples:
 - **Trend discovery** - "What are the best rap songs right now?"
 - **Product research** - "What do people think of the new M4 MacBook?"
 - **Viral content** - "What's the dog-as-human trend on ChatGPT?"
+
+---
+
+## Example: Nano Banana Pro Prompting (Image Generation)
+
+**Query:** `/last30days nano banana pro prompting`
+
+**Research Output:**
+> JSON prompting is the dominant technique — The X community overwhelmingly uses structured JSON prompts rather than plain text. Creators like @Xmira_belle, @Cicily_aura, @RubenSalvo_, and @mahivisuals all share prompts in JSON format with nested objects for metadata, subject descriptions, lighting, camera specs, and scene composition. @realdigitaldao made a static ad "in less than 5 min" using a simple JSON prompt.
+>
+> Prompt adherence is Nano Banana Pro's killer advantage — JSON prompts hit 92% precision for color accuracy, lighting ratios, and composition vs ~68% for natural language prompts, per fofr.ai. @artingent directly compared it to GPT Image 1.5 and noted Nano Banana Pro has higher prompt adherence — "GPT image 1.5 ignored the Top Down instruction."
+>
+> Stop writing "tag soup" — act like a Creative Director — The biggest shift is away from comma-separated keyword lists toward natural language descriptions with clear structure. The ICS Framework (Image type, Content, Style) and the 5-element formula (subject, composition, action, setting, style) are the two dominant approaches, per r/nanobanana2pro.
+
+**Key patterns discovered:**
+1. JSON > plain text — Structure prompts as JSON objects with keys for subject, composition, lighting, camera, style — per @Xmira_belle, @Cicily_aura
+2. The 5-element formula — Subject + Composition + Action + Setting + Style — per r/nanobanana2pro
+3. Separate subjects into distinct objects — Multi-character scenes need each person in their own JSON block to prevent "concept bleeding" — per fofr.ai
+4. Use camera/lens metadata — Aperture, focal length, ISO, film stock as JSON keys for hidden photorealism control
+5. 14 reference images max — Feed up to 14 reference images for brand/character consistency — per Google DeepMind
+
+**Research Stats:** 8 Reddit threads (455 upvotes) + 31 X posts (183 likes, 68 reposts) from r/nanobanana2pro, r/promptingmagic, @Xmira_belle (106 likes), @Cicily_aura (45 likes)
+
+**Then asked:** "make a mock-up of an app for moms who swim"
+
+**Generated Prompt:**
+
+```json
+{
+  "image_type": "UI mockup",
+  "device": {
+    "frame": "iPhone 16 Pro",
+    "display": "realistic screen with subtle reflection",
+    "orientation": "portrait"
+  },
+  "app_concept": "SwimMom - fitness and community app for mothers who swim",
+  "screen": "home dashboard",
+  "design_system": {
+    "style": "iOS 18 native",
+    "corners": "rounded, 16px radius",
+    "shadows": "soft drop shadows, subtle depth",
+    "spacing": "8pt grid, generous whitespace"
+  },
+  "color_palette": {
+    "primary": "calming aqua blue (#4ECDC4)",
+    "secondary": "warm coral (#FF6B6B)",
+    "background": "clean white with soft blue gradient header"
+  },
+  "layout": {
+    "header": "greeting 'Good morning, Sarah' with wave icon, profile avatar top right",
+    "hero_card": "today's swim stats - laps, calories, time - with circular progress ring",
+    "section_2": "horizontal scroll of upcoming mom swim meetups with location pills",
+    "section_3": "two cards - 'My Goals' with streak counter, 'Find a Pool' with map pin",
+    "bottom_nav": "5 icons - Home (active), Workouts, Community, Schedule, Profile"
+  },
+  "visual_details": {
+    "illustrations": "friendly, minimal line art of swimming figure",
+    "typography": "SF Pro Display, clean hierarchy",
+    "mood": "energizing yet calm, supportive community feel"
+  }
+}
+```
+
+**The Result:**
+
+<p align="center">
+  <img src="assets/swimmom-mockup.jpeg" width="400" alt="SwimMom iOS app mockup"/>
+</p>
+
+This example shows /last30days learning that **JSON prompts dominate** the Nano Banana Pro community (not plain text), then applying that format to generate an iOS mockup in one shot. The research came from real X creators and Reddit threads — techniques you wouldn't find in official docs.
+
+---
+
+## Example: Kanye West (Current Events)
+
+**Query:** `/last30days kanye west`
+
+**Research Output:**
+> **The Apology Arc** — On January 26, Ye published a full-page letter in The Wall Street Journal titled "To Those I've Hurt," apologizing for antisemitic comments and attributing it to a four-month manic episode, an undiagnosed brain injury from his 2002 car crash, and bipolar type-1 disorder. The ADL called it "long overdue" but said it "doesn't automatically undo his long history of antisemitism." Then on February 9, he posted "I love Hitler now what" — blowing up the goodwill almost immediately, per The Mirror. Fans on X are split on whether the apology was genuine or just pre-album PR, per @dekreationz's viral post (8.6K likes).
+>
+> **BULLY Album** — Twelfth studio album set for March 20 via YZY and Gamma. 13 tracks with Peso Pluma, Playboi Carti, and Ty Dolla Sign features. Sonically it leans toward 808s/MBDTF territory — more singing than rapping. Ye has reportedly removed all deepfaked/AI-generated vocals from the final version, per Rolling Stone.
+>
+> **Bianca Censori Breaks Silence** — In a Vanity Fair tell-all, Bianca spoke publicly for the first time about their marriage, saying "This year was a lot like doing CPR for months." She confirmed her outfits are her own choice and revealed their relationship started when she was head of architecture at Yeezy, per TMZ.
+>
+> **Kim/Instagram Drama** — A screenshot of Ye allegedly commenting on Kim's Complex magazine post went mega-viral on X. Multiple Grok fact-checks confirmed it's likely fabricated, but @dekreationz's post racked up nearly 9K likes regardless — showing the Ye/Kim narrative still drives massive engagement.
+
+**Key patterns from the research:**
+1. Apology-then-relapse cycle — The WSJ letter was immediately undercut by new inflammatory posts, making sincerity the dominant debate, per Washington Post
+2. Album as PR vehicle — Skeptics across X tie the apology's timing directly to BULLY's March 20 release, per @trustGod_007
+3. Bianca as her own story — Transitioning from "Kanye's wife" to individual public figure through Vanity Fair
+4. Fake screenshot virality — Fabricated Ye content still goes massively viral before debunking, per @dekreationz
+
+**Research Stats:** 3 Reddit threads (193 upvotes, 192 comments) + 33 X posts (9,295 likes, 279 reposts) from r/Kanye, r/hiphopheads, @dekreationz (8,684 likes), @trustGod_007
+
+**Follow-up suggestions offered:**
+> I'm now an expert on Kanye West. Some things I can help with:
+> - What's the real story behind the apology letter — genuine accountability or pre-album PR?
+> - Deep dive on BULLY: tracklist, Gamma deal, and removal of AI vocals
+> - The Bianca Censori Vanity Fair interview — what she actually said vs. the tabloid headlines
+
+This example shows /last30days as a **current events research tool** — no prompting, no target tool, just "what's happening with Kanye?" and you get a synthesized expert briefing pulled from 33 X posts and 3 Reddit threads with real engagement data.
+
+---
+
+## Example: Vibe Motion (Brand New AI Tool)
+
+**Query:** `/last30days higgsfield motion vibe motion prompting`
+
+**Research Output:**
+> **Vibe Motion just launched (Feb 5-6, 2026) and it's blowing up** — Higgsfield dropped a Claude-powered motion design tool that generates editable motion graphics from plain-English prompts. It's the first AI video tool with actual reasoning, per @Hartdrawss, and @rezkhere called it out as something "no other AI can do." Linus Ekenstam said it "broke his brain" — work that took hours in After Effects now takes minutes.
+>
+> **It generates code, not pixels** — Unlike other AI video tools, Vibe Motion produces actual animation code (via Remotion under the hood), not hallucinated video. Text never breaks, edits stay consistent, and you get a controllable, editable asset, per @Totinhiiio.
+>
+> **Honest reviews: promising but not polished yet** — Chase Jarvis found results "okay" but noted 5+ minute render times, credit burn on iteration (8-60 credits per gen, $9 plan = ~150 credits), and that basic results are achievable faster with Canva. His verdict: "not quite ready for prime time" but the underlying tech shows significant potential.
+
+**Key patterns discovered:**
+1. Describe structure, not effects — Focus on timing, hierarchy, typography, and flow rather than expressive visual storytelling, per Higgsfield's official guide
+2. Upload your actual assets first — Brand logos, product images, PDFs give the AI context to build around YOUR files, not generic placeholders
+3. Use presets as starting points — Select a format (Infographics, Text Animation, Posters) before writing your prompt
+4. Keep prompts conversational and direct — Short commands > long descriptions. "Create a kinetic typography intro" beats a paragraph of specs, per Segmind
+5. Budget for iteration — Each generation burns credits, so get your prompt right before hitting generate, per Chase Jarvis
+
+**Research Stats:** 10 Reddit threads + 30 X posts from @rezkhere, @Hartdrawss, @Totinhiiio + 14 web pages (Higgsfield blog, Chase Jarvis, SiliconANGLE, Segmind)
+
+**Follow-up suggestions offered:**
+> I'm now an expert on Higgsfield Vibe Motion prompting. What do you want to make?
+> - A branded infographic animation with your company metrics animating in
+> - A kinetic typography intro/bumper for a YouTube series
+> - A logo reveal animation with particle effects and custom brand colors
+
+This example shows /last30days researching **a tool that launched 2 days ago**. No blog roundups existed yet — the research came from X creators and Reddit threads reacting in real-time. You get prompting advice from the people actually using it, not SEO articles written after the fact.
 
 ---
 
@@ -187,75 +333,6 @@ docker compose up -d
 **Research Stats:** 8 Reddit threads (128 upvotes) + 22 X posts (24,000+ likes) from r/selfhosted, r/LocalLLaMA, @dreetje, @steipete
 
 This example shows /last30days as a **setup guide aggregator** - pulling together scattered installation advice, gotchas, and best practices from real users who've already solved the problems you're about to encounter.
-
----
-
-## Example: iOS App Mockup (Nano Banana Pro)
-
-**Query:** `/last30days prompting tips for nano banana pro for ios designs`
-
-**Research Output:**
-> The community has converged on JSON-structured prompts for UI work - multiple viral posts from @brindleyai, @bananababydoll, and @fofrAI use detailed JSON with nested objects for subject, scene, and style. The key workflow from @fofrAI: take an existing image, have Gemini generate a JSON prompt from it, then iterate. For iOS specifically, @paji_a and @chongdashu both documented using Nano Banana Pro for iOS app mockup designs in "vibe coding" workflows.
->
-> The web guides emphasize thinking in layers: define the window frame first, then UI layout (sidebars, nav bars, cards), then text on buttons/headings. Google's official prompting guide says to drop the "4k masterpiece trending on artstation" spam - Nano Banana Pro understands natural language. For tight layouts, use an 8pt grid and limit screens to 6-8 elements.
-
-**Key patterns discovered:**
-1. JSON prompt format with nested sections (subject, scene, style, device)
-2. Layer-based structure - frame -> layout regions -> content -> text labels
-3. iOS 18 / Material Design 3 references - rounded corners, soft shadows, vibrant primary
-4. iPhone frame specification - "inside realistic iPhone 16 Pro frame"
-5. Wireframe-to-mockup workflow - upload sketch, request high-fidelity conversion
-6. 8pt grid + 6-8 elements max per screen for clean density
-7. Iterative editing - don't re-roll, ask for specific changes if 80% correct
-
-**Then asked:** "make a mock-up of an app for moms who swim"
-
-**Generated Prompt:**
-
-```json
-{
-  "image_type": "UI mockup",
-  "device": {
-    "frame": "iPhone 16 Pro",
-    "display": "realistic screen with subtle reflection",
-    "orientation": "portrait"
-  },
-  "app_concept": "SwimMom - fitness and community app for mothers who swim",
-  "screen": "home dashboard",
-  "design_system": {
-    "style": "iOS 18 native",
-    "corners": "rounded, 16px radius",
-    "shadows": "soft drop shadows, subtle depth",
-    "spacing": "8pt grid, generous whitespace"
-  },
-  "color_palette": {
-    "primary": "calming aqua blue (#4ECDC4)",
-    "secondary": "warm coral (#FF6B6B)",
-    "background": "clean white with soft blue gradient header",
-    "accents": "pool water ripple patterns, subtle"
-  },
-  "layout": {
-    "header": "greeting 'Good morning, Sarah' with small wave icon, profile avatar top right",
-    "hero_card": "today's swim stats - laps completed, calories burned, time in pool - with circular progress ring",
-    "section_2": "horizontal scroll of upcoming mom swim meetups with location pills and participant avatars",
-    "section_3": "two cards side by side - 'My Goals' with streak counter, 'Find a Pool' with map pin icon",
-    "bottom_nav": "5 icons - Home (active), Workouts, Community, Schedule, Profile"
-  },
-  "visual_details": {
-    "illustrations": "friendly, minimal line art of swimming figure",
-    "typography": "SF Pro Display, clean hierarchy",
-    "mood": "energizing yet calm, supportive community feel"
-  }
-}
-```
-
-**The Result:**
-
-<p align="center">
-  <img src="assets/swimmom-mockup.jpeg" width="400" alt="SwimMom iOS app mockup"/>
-</p>
-
-This example shows /last30days learning **AI image generation prompting patterns** (JSON structure, layer-based thinking, iOS design system references) and applying them to create a production-quality app mockup in one shot.
 
 ---
 
@@ -693,26 +770,84 @@ This example shows /last30days discovering **emerging developer workflows** - re
 
 | Flag | Description |
 |------|-------------|
-| `--quick` | Faster research, fewer sources (8-12 each) |
-| `--deep` | Comprehensive research (50-70 Reddit, 40-60 X) |
+| `--days=N` | Look back N days instead of 30 (e.g., `--days=7` for weekly roundup) |
+| `--quick` | Faster research, fewer sources (8-12 each), skips supplemental search |
+| `--deep` | Comprehensive research (50-70 Reddit, 40-60 X) with extended supplemental |
 | `--debug` | Verbose logging for troubleshooting |
 | `--sources=reddit` | Reddit only |
 | `--sources=x` | X only |
 
 ## Requirements
 
-- **OpenAI API key** - For Reddit research (uses web search)
-- **xAI API key** - For X research (optional but recommended)
+- **OpenAI API key** - For Reddit research (uses web search via Responses API)
+- **X search** (one of):
+  - **Bird CLI** (free) - `npm install -g @steipete/bird && bird login`
+  - **xAI API key** - Paid, uses Grok's live X search
 
-At least one key is required.
+At least one API key is required. Bird CLI is recommended for X search since it's free.
 
 ## How It Works
 
-The skill uses:
-- OpenAI's Responses API with web search to find Reddit discussions
-- xAI's API with live X search to find posts
-- Real Reddit thread enrichment for engagement metrics
-- Scoring algorithm that weighs recency, relevance, and engagement
+### Two-Phase Search Architecture
+
+**Phase 1: Broad discovery**
+- OpenAI Responses API with `web_search` tool scoped to reddit.com
+- Bird CLI (or xAI API) for X/Twitter search
+- WebSearch for blogs, news, docs, tutorials
+- Reddit JSON enrichment for real engagement metrics (upvotes, comments)
+- Scoring algorithm weighing recency, relevance, and engagement
+
+**Phase 2: Smart supplemental search** (new in V2)
+- Extracts entities from Phase 1 results: @handles from X posts, subreddit names from Reddit
+- Runs targeted follow-up searches: `from:@handle topic` on X, subreddit-scoped searches on Reddit
+- Uses Reddit's free `.json` search endpoint (no API key needed for supplemental)
+- Merges and deduplicates with Phase 1 results
+- Skipped on `--quick` for speed; extended on `--deep`
+
+### Model Fallback Chain
+
+Reddit search (via OpenAI) automatically falls back through available models:
+gpt-4.1 -> gpt-4o -> gpt-4o-mini
+
+If your OpenAI org doesn't have access to a model (e.g., unverified for gpt-4.1), it tries the next one.
+
+---
+
+## What's New in V2
+
+### Way better X and Reddit results
+
+V2 finds significantly more content than V1. Two major improvements:
+
+**Smarter query construction** - V1 sent overly specific queries to X search (literal keyword AND matching), causing 0 results on topics that were actively trending. V2 aggressively strips research/meta words ("best", "prompt", "techniques", "tips") and question prefixes ("what are people saying about") to extract just the core topic. Example: `"vibe motion best prompt techniques"` now searches for `"vibe motion"` instead of `"vibe motion prompt techniques"` — going from 0 posts to 12+. Automatically retries with fewer keywords if the first attempt returns nothing.
+
+**Smart supplemental search (Phase 2)** - After the initial broad search, extracts key @handles and subreddits from the results, then runs targeted follow-up searches to find content that keyword search alone misses. Example: researching "Open Claw" automatically discovers @openclaw, @steipete and drills into their posts. For Reddit, it hits the free `.json` search endpoint scoped to discovered subreddits — no extra API keys needed.
+
+**Reddit JSON enrichment** - Fetches real upvote and comment counts from Reddit's free API for every thread, giving you actual engagement signals instead of estimates.
+
+### Free X search via Bird CLI
+
+**Bird CLI integration** - Search X without an xAI API key. Just `npm install -g @steipete/bird && bird login`. Auto-detected at runtime — if Bird is installed, it's used automatically. If both Bird and an xAI key are available, Bird is preferred.
+
+### Everything else
+
+**`--days=N` flag** - Configurable lookback window. `/last30days topic --days=7` for a weekly roundup, `--days=14` for two weeks.
+
+**Model fallback chain** - If your OpenAI org can't access gpt-4.1, automatically falls back to gpt-4o, then gpt-4o-mini. No config needed.
+
+**Context-aware invitations** - After research, the skill generates specific follow-up suggestions based on what it actually learned (not generic templates). For example, after researching Nano Banana Pro it might suggest "Photorealistic product shots with natural lighting" rather than a generic "describe what you want."
+
+**Citation priority** - Cites @handles from X and r/subreddits over web sources, because the skill's value is surfacing what *people* are saying, not what journalists wrote.
+
+**Marketplace plugin support** - Ships with `.claude-plugin/plugin.json` for Claude Code marketplace compatibility. (Inspired by [@galligan](https://github.com/galligan)'s PR)
+
+### Community contributions
+
+Thanks to the contributors who helped shape V2:
+
+- [@JosephOIbrahim](https://github.com/JosephOIbrahim) - Windows Unicode fix
+- [@levineam](https://github.com/levineam) - Model fallback for unverified orgs
+- [@jonthebeef](https://github.com/jonthebeef) - `--days=N` configurable lookback
 
 ---
 
