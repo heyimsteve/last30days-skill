@@ -61,13 +61,67 @@ function buildPlanPrompt(candidate: NicheCandidate, type: PlanOutputType) {
 
 Candidate context:
 - Niche: ${candidate.name}
+- Problem statement: ${candidate.problemStatement}
 - One-liner: ${candidate.oneLiner}
 - AI build angle: ${candidate.aiBuildAngle}
+- ICP: ${candidate.icp}
 - Audience: ${candidate.audience}
 - Why now: ${candidate.whyNow}
 - Recommendation: ${candidate.recommendation}
 - Score: ${candidate.score}
 - Verdict: ${candidate.verdict}
+
+Demand snapshot:
+- Trend: ${candidate.demand.trendSummary}
+- Urgency drivers: ${candidate.demand.urgencyDrivers.join(", ") || "n/a"}
+- Buying signals: ${candidate.demand.buyingSignals.join(", ") || "n/a"}
+- Search keywords: ${candidate.demand.searchKeywords.join(", ") || "n/a"}
+
+Market landscape:
+- Competition level: ${candidate.landscape.competitionLevel}
+- Incumbents: ${candidate.landscape.incumbentTypes.join(", ") || "n/a"}
+- Whitespace: ${candidate.landscape.whitespace.join(", ") || "n/a"}
+- Beachhead wedge: ${candidate.landscape.beachheadWedge}
+
+Business model:
+- Pricing model: ${candidate.businessModel.pricingModel}
+- Price anchor: ${candidate.businessModel.priceAnchor}
+- Time to first dollar: ${candidate.businessModel.timeToFirstDollar}
+- Gross margin profile: ${candidate.businessModel.expectedGrossMargin}
+
+Go-to-market:
+- Channels: ${candidate.goToMarket.channels.join(", ") || "n/a"}
+- Offer hook: ${candidate.goToMarket.offerHook}
+- Sales motion: ${candidate.goToMarket.salesMotion}
+- Retention loop: ${candidate.goToMarket.retentionLoop}
+
+Execution blueprint:
+- Build complexity: ${candidate.execution.buildComplexity}
+- Stack recommendation: ${candidate.execution.stackRecommendation}
+- MVP scope: ${candidate.execution.mvpScope.join(", ") || "n/a"}
+- Automation levers: ${candidate.execution.automationLevers.join(", ") || "n/a"}
+- Moat levers: ${candidate.execution.moatLevers.join(", ") || "n/a"}
+
+Outcome scoring:
+- Time to first dollar (days): ${candidate.outcomes.timeToFirstDollarDays}
+- GTM difficulty (1-10): ${candidate.outcomes.gtmDifficulty}
+- Integration complexity (1-10): ${candidate.outcomes.integrationComplexity}
+- Weighted outcome score: ${candidate.outcomes.weightedScore}
+
+Competitor intelligence:
+${candidate.competitors.map((competitor) => `- ${competitor.name}: ${competitor.pricingSummary} | friction: ${competitor.onboardingFriction} | sentiment: ${competitor.reviewSentiment} | ${competitor.url}`).join("\n") || "- none"}
+
+Persona variants:
+${candidate.personaVariants.map((persona) => `- ${persona.persona}: pain=${persona.primaryPain}; offer=${persona.offerVariant}; price=${persona.pricingAngle}; channel=${persona.bestChannel}`).join("\n") || "- none"}
+
+Validation experiments:
+${candidate.validationPlan.map((step) => `- ${step.experiment} | success: ${step.successMetric} | effort: ${step.effort}`).join("\n") || "- none"}
+
+Key risks:
+${candidate.risks.map((risk) => `- ${risk}`).join("\n") || "- none"}
+
+Kill criteria:
+${candidate.killCriteria.map((item) => `- ${item}`).join("\n") || "- none"}
 
 Validation checks:
 Spending:

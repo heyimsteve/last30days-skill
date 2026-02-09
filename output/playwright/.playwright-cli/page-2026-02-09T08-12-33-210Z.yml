@@ -1,0 +1,732 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - banner [ref=e4]:
+        - generic [ref=e5]:
+          - link "Ideabrowser symbol Ideabrowser" [ref=e7] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e8]:
+              - img "Ideabrowser symbol" [ref=e10]
+              - img "Ideabrowser" [ref=e11]
+          - navigation [ref=e12]:
+            - navigation [ref=e15]:
+              - button "Find Ideas" [ref=e16] [cursor=pointer]:
+                - text: Find Ideas
+                - img [ref=e17]
+              - button "Build Ideas" [ref=e19] [cursor=pointer]:
+                - text: Build Ideas
+                - img [ref=e20]
+              - link "Pricing" [ref=e22] [cursor=pointer]:
+                - /url: /pricing
+              - button "More" [ref=e23] [cursor=pointer]:
+                - text: More
+                - img [ref=e24]
+          - generic [ref=e27]:
+            - link "Login" [ref=e28] [cursor=pointer]:
+              - /url: /login
+            - link "Sign Up" [ref=e29] [cursor=pointer]:
+              - /url: /sign-up
+      - generic [ref=e30]:
+        - heading "Idea of the Day" [level=2] [ref=e31]
+        - navigation [ref=e33]:
+          - link "Previous" [ref=e34] [cursor=pointer]:
+            - /url: /previous-ideas
+            - img [ref=e35]
+            - generic [ref=e37]: Previous
+          - generic [ref=e38]: "|"
+          - link "Feb 9, 2026" [ref=e39] [cursor=pointer]:
+            - /url: /idea-of-the-day
+            - img [ref=e40]
+            - generic [ref=e42]: Feb 9, 2026
+          - generic [ref=e43]: "|"
+          - link "Next Idea" [ref=e44] [cursor=pointer]:
+            - /url: /next-idea
+            - generic [ref=e45]: Next Idea
+            - img [ref=e46]
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - generic [ref=e52]:
+                - generic [ref=e54]:
+                  - generic [ref=e56]:
+                    - button "Idea Actions" [ref=e59] [cursor=pointer]:
+                      - img [ref=e60]
+                      - generic [ref=e62]: Idea Actions
+                      - img [ref=e63]
+                    - generic [ref=e66]:
+                      - button "Roast" [ref=e67] [cursor=pointer]:
+                        - img [ref=e68]
+                        - generic [ref=e70]: Roast
+                      - link "Lovable logo v0 logo Replit logo Build This Idea" [ref=e71] [cursor=pointer]:
+                        - /url: /idea/credit-coach-for-future-homebuyers/build/landing-page
+                        - generic [ref=e72]:
+                          - generic "Lovable" [ref=e73]:
+                            - img "Lovable logo" [ref=e74]
+                          - generic "v0" [ref=e75]:
+                            - img "v0 logo" [ref=e76]
+                          - generic "Replit" [ref=e77]:
+                            - img "Replit logo" [ref=e78]
+                        - generic [ref=e79]: Build This Idea
+                        - img [ref=e81]
+                  - heading "Credit coach that gets first-time buyers mortgage-ready" [level=1] [ref=e84]
+                - generic [ref=e87]:
+                  - generic [ref=e88]:
+                    - generic [ref=e89]:
+                      - generic [ref=e90]: ⏰
+                      - text: Perfect Timing
+                    - generic [ref=e91]:
+                      - generic [ref=e92]: ⚡
+                      - text: Unfair Advantage
+                    - generic [ref=e93]:
+                      - generic [ref=e94]: 💎
+                      - text: High Margins Proven
+                  - button "+16 More" [ref=e95] [cursor=pointer]
+                - paragraph [ref=e96]: Every real estate agent has a drawer full of deals that almost closed. Buyers who found the house, got pre-approved, and came up 20 points short on credit. Nothing to do but wait and hope they come back. Some drop the budget for more showings. Most just disappear. The commission never comes. Credit Clock coaches to a closing date. Generic advice says pay bills on time. Credit Clock says pay the Capital One to 15% utilization first, because that's 23 points in 6 weeks. Dispute the medical collection next, because removal takes 30 days and the closing is in 60. Every move is sequenced backward from the date that matters. The trick is the reporting calendar. Each creditor reports to bureaus on a different date, and utilization snapshots on that date determine the score impact. Map those cycles and the sequencing becomes predictable. Build on Plaid for credit report access, with PDF upload as fallback. Partner with three mortgage brokers who have buyers they can't help yet, and track predicted score movement against real results over 90 days in Supabase. Every user who follows the plan teaches the model which moves land and when. Charge $29/month for basic access, $79/month for premium with timeline tracking and score simulations. Real estate agents and mortgage brokers become distribution because they already have the leads who need this. White-label for brokerages at $5K-15K annually. First-time buyers made up 32% of home sales last year, over a million deals where twenty points on a credit score separated closing from walking away. Every agent has a drawer full of those leads. Credit Clock empties it.
+                - paragraph [ref=e97]: "*Analysis, scores, and revenue estimates are educational and based on assumptions. Results vary by execution and market conditions."
+              - generic [ref=e98]:
+                - generic [ref=e101]:
+                  - generic [ref=e103]:
+                    - combobox [ref=e106] [cursor=pointer]:
+                      - generic [ref=e107]:
+                        - generic [ref=e108]: "Keyword:"
+                        - generic [ref=e109]: How to rebuild credit fast
+                      - img [ref=e110]
+                    - generic [ref=e112]:
+                      - generic [ref=e113]:
+                        - generic [ref=e114]: 368.0K
+                        - generic [ref=e115]:
+                          - generic [ref=e116]: Volume
+                          - button [ref=e117] [cursor=pointer]:
+                            - img [ref=e118]
+                      - generic [ref=e121]:
+                        - generic [ref=e122]: +51011%
+                        - generic [ref=e123]:
+                          - generic [ref=e124]: Growth
+                          - button [ref=e125] [cursor=pointer]:
+                            - img [ref=e126]
+                  - img [ref=e133]:
+                    - generic [ref=e137]:
+                      - generic [ref=e139]: "2022"
+                      - generic [ref=e141]: "2023"
+                      - generic [ref=e143]: "2024"
+                      - generic [ref=e145]: "2025"
+                    - generic [ref=e147]:
+                      - generic [ref=e149]: "0"
+                      - generic [ref=e151]: 95k
+                      - generic [ref=e153]: 190k
+                      - generic [ref=e155]: 285k
+                      - generic [ref=e157]: 380k
+                - generic [ref=e169]:
+                  - generic [ref=e170]:
+                    - button "Opportunity 9 Exceptional" [ref=e171] [cursor=pointer]:
+                      - generic [ref=e174]:
+                        - generic [ref=e176]:
+                          - heading "Opportunity" [level=3] [ref=e177]
+                          - img [ref=e178]
+                        - generic [ref=e180]:
+                          - generic [ref=e181]: "9"
+                          - generic [ref=e182]: Exceptional
+                    - button "Problem 9 Severe Pain" [ref=e185] [cursor=pointer]:
+                      - generic [ref=e188]:
+                        - generic [ref=e190]:
+                          - heading "Problem" [level=3] [ref=e191]
+                          - img [ref=e192]
+                        - generic [ref=e194]:
+                          - generic [ref=e195]: "9"
+                          - generic [ref=e196]: Severe Pain
+                    - button "Feasibility 6 Challenging" [ref=e199] [cursor=pointer]:
+                      - generic [ref=e202]:
+                        - generic [ref=e204]:
+                          - heading "Feasibility" [level=3] [ref=e205]
+                          - img [ref=e206]
+                        - generic [ref=e208]:
+                          - generic [ref=e209]: "6"
+                          - generic [ref=e210]: Challenging
+                    - button "Why Now 9 Perfect Timing" [ref=e213] [cursor=pointer]:
+                      - generic [ref=e216]:
+                        - generic [ref=e218]:
+                          - heading "Why Now" [level=3] [ref=e219]
+                          - img [ref=e220]
+                        - generic [ref=e222]:
+                          - generic [ref=e223]: "9"
+                          - generic [ref=e224]: Perfect Timing
+                  - generic [ref=e228]:
+                    - heading "Business Fit" [level=2] [ref=e230]
+                    - generic [ref=e231]:
+                      - button "💰 Revenue Potential $1M-$10M ARR potential with strong demand from young homebuyers $$$" [ref=e232] [cursor=pointer]:
+                        - generic [ref=e233]:
+                          - generic [ref=e234]:
+                            - generic [ref=e236]: 💰
+                            - generic [ref=e237]:
+                              - generic [ref=e238]: Revenue Potential
+                              - generic [ref=e239]: $1M-$10M ARR potential with strong demand from young homebuyers
+                          - generic [ref=e240]: $$$
+                      - button "🛠️ Execution Difficulty Solo-friendly build, 1-2 week MVP with AI tools. 4/10" [ref=e241] [cursor=pointer]:
+                        - generic [ref=e242]:
+                          - generic [ref=e243]:
+                            - generic [ref=e245]: 🛠️
+                            - generic [ref=e246]:
+                              - generic [ref=e247]: Execution Difficulty
+                              - generic [ref=e248]: Solo-friendly build, 1-2 week MVP with AI tools.
+                          - generic [ref=e249]: 4/10
+                      - button "🚀 Go-To-Market Strong traction with clear signals across Reddit, Facebook, and YouTube for AI-driven credit solutions. 8/10" [ref=e250] [cursor=pointer]:
+                        - generic [ref=e251]:
+                          - generic [ref=e252]:
+                            - generic [ref=e254]: 🚀
+                            - generic [ref=e255]:
+                              - generic [ref=e256]: Go-To-Market
+                              - generic [ref=e257]: Strong traction with clear signals across Reddit, Facebook, and YouTube for AI-driven credit solutions.
+                          - generic [ref=e258]: 8/10
+                      - link "🧠 Right for You? Ideal for founders with fintech and AI experience. Find Out" [ref=e259] [cursor=pointer]:
+                        - /url: /idea/credit-coach-for-future-homebuyers/founder-fit
+                        - generic [ref=e260]:
+                          - generic [ref=e261]:
+                            - generic [ref=e263]: 🧠
+                            - generic [ref=e264]:
+                              - generic [ref=e265]: Right for You?
+                              - generic [ref=e266]: Ideal for founders with fintech and AI experience.
+                          - generic [ref=e268]:
+                            - text: Find Out
+                            - img [ref=e269]
+            - generic [ref=e271]:
+              - generic [ref=e272]:
+                - link "Research Tool Get a Report Exactly Like This for Your Idea Have your own business idea? Our AI Research Agent conducts a comprehensive 40-step analysis to validate and research any idea you give it. Research My Idea" [ref=e273] [cursor=pointer]:
+                  - /url: /idea-agent
+                  - generic [ref=e280]:
+                    - generic [ref=e281]:
+                      - generic [ref=e284]: Research Tool
+                      - img [ref=e286]
+                    - generic [ref=e296]:
+                      - heading "Get a Report Exactly Like This for Your Idea" [level=3] [ref=e297]
+                      - paragraph [ref=e298]: Have your own business idea? Our AI Research Agent conducts a comprehensive 40-step analysis to validate and research any idea you give it.
+                    - generic [ref=e300]:
+                      - img [ref=e301]
+                      - text: Research My Idea
+                      - img [ref=e303]
+                - generic [ref=e305]:
+                  - generic [ref=e306]:
+                    - heading "Offer" [level=2] [ref=e307]
+                    - generic [ref=e308]:
+                      - generic [ref=e309]:
+                        - generic [ref=e310]: "1"
+                        - generic [ref=e311]:
+                          - generic [ref=e312]: Lead Magnet
+                          - generic [ref=e313]:
+                            - text: Credit Readiness Quiz
+                            - generic [ref=e314]: (Free)
+                          - paragraph [ref=e315]: Interactive quiz providing instant feedback on credit readiness for homebuyers.
+                      - generic [ref=e316]:
+                        - generic [ref=e317]: "2"
+                        - generic [ref=e318]:
+                          - generic [ref=e319]: Frontend
+                          - generic [ref=e320]:
+                            - text: Credit Clock Starter
+                            - generic [ref=e321]: ($29/month)
+                          - paragraph [ref=e322]: Entry-level subscription offering basic credit improvement strategies and real-time tracking.
+                      - generic [ref=e323]:
+                        - generic [ref=e324]: "3"
+                        - generic [ref=e325]:
+                          - generic [ref=e326]: Core
+                          - generic [ref=e327]:
+                            - text: Credit Clock Premium
+                            - generic [ref=e328]: ($49/month)
+                          - paragraph [ref=e329]: Comprehensive subscription with advanced tools and predictive analytics for credit improvement.
+                    - link "View full value ladder →" [ref=e330] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/value-ladder
+                      - text: View full value ladder
+                      - generic [ref=e331]: →
+                  - generic [ref=e332]:
+                    - heading "Why Now?" [level=2] [ref=e333]
+                    - paragraph [ref=e334]: The perfect time to launch the AI Credit Coach is now, as the market for personalized financial tools is booming, AI technology is rapidly advancing, and a significant gap exists for first-time homebuyer-specific credit improvement solutions.
+                    - link "See why this opportunity matters now" [ref=e335] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/why-now
+                      - text: See why this opportunity matters now
+                      - img [ref=e336]
+                  - generic [ref=e338]:
+                    - heading "Proof & Signals" [level=2] [ref=e339]
+                    - paragraph [ref=e340]: The AI Credit Coach shows strong potential in addressing existing pain points in credit improvement for first-time homebuyers. Emotional frustration with generic advice and confusion in credit steps highlight a need for targeted guidance. The market is ripe, driven by increasing financial literacy focus and accelerated by rising millennial homeownership. Community engagement and user behavior analytics validate demand, while competition lies more in generic services lacking personalized solutions.
+                    - link "Explore proof & signals" [ref=e341] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/proof-signals
+                      - text: Explore proof & signals
+                      - img [ref=e342]
+                  - generic [ref=e344]:
+                    - heading "The Market Gap" [level=2] [ref=e345]
+                    - paragraph [ref=e346]: The largest market gap is targeting first-time homebuyers with personalized credit-improvement plans, an underserved niche in a booming market.
+                    - link "Understand the market opportunity" [ref=e347] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/market-gap
+                      - text: Understand the market opportunity
+                      - img [ref=e348]
+                  - generic [ref=e350]:
+                    - heading "Execution Plan" [level=2] [ref=e351]
+                    - paragraph [ref=e352]: Launch an AI-powered MVP offering personalized credit improvement plans for first-time homebuyers. Integrate quizzes for real-time credit feedback, then boost engagement with Reddit AMAs and YouTube tutorials. Next up? Expand to include financial coaching, leveraging the existing user base. Ready to transform financial futures?
+                    - link "View detailed execution strategy" [ref=e353] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/execution-plan
+                      - text: View detailed execution strategy
+                      - img [ref=e354]
+                - generic [ref=e356]:
+                  - generic [ref=e357]:
+                    - heading "Framework Fit" [level=2] [ref=e358]
+                    - paragraph [ref=e359]: See how this idea fits into popular frameworks
+                  - generic [ref=e360]:
+                    - link "The Value Equation View Analysis" [ref=e361] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/value-equation
+                      - heading "The Value Equation" [level=3] [ref=e364]
+                      - generic [ref=e367]:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img:
+                                - generic:
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic:
+                                      - img
+                                - generic:
+                                  - generic: 8Excellent
+                      - button "View Analysis" [ref=e369]:
+                        - text: View Analysis
+                        - img [ref=e370]
+                    - link "Market Matrix Tech Novelty High uniqueness Low value Category King High uniqueness High value Low Impact Low uniqueness Low value Commodity Play Low uniqueness High value View Analysis" [ref=e372] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/value-matrix
+                      - heading "Market Matrix" [level=3] [ref=e375]
+                      - generic [ref=e379]:
+                        - generic [ref=e381]:
+                          - heading "Tech Novelty" [level=3] [ref=e382]
+                          - generic [ref=e383]:
+                            - paragraph [ref=e384]: High uniqueness
+                            - paragraph [ref=e385]: Low value
+                        - generic [ref=e387]:
+                          - heading "Category King" [level=3] [ref=e388]
+                          - generic [ref=e389]:
+                            - paragraph [ref=e390]: High uniqueness
+                            - paragraph [ref=e391]: High value
+                        - generic [ref=e393]:
+                          - heading "Low Impact" [level=3] [ref=e394]
+                          - generic [ref=e395]:
+                            - paragraph [ref=e396]: Low uniqueness
+                            - paragraph [ref=e397]: Low value
+                        - generic [ref=e399]:
+                          - heading "Commodity Play" [level=3] [ref=e400]
+                          - generic [ref=e401]:
+                            - paragraph [ref=e402]: Low uniqueness
+                            - paragraph [ref=e403]: High value
+                      - button "View Analysis" [ref=e405]:
+                        - text: View Analysis
+                        - img [ref=e406]
+                    - link "The A.C.P. Framework Audience 8/10 Community 8/10 Product 9/10 View Analysis" [ref=e408] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/acp
+                      - heading "The A.C.P. Framework" [level=3] [ref=e411]
+                      - generic [ref=e413]:
+                        - generic [ref=e414]:
+                          - generic [ref=e415]:
+                            - generic [ref=e416]: Audience
+                            - generic [ref=e417]: 8/10
+                          - progressbar [ref=e418]
+                        - generic [ref=e420]:
+                          - generic [ref=e421]:
+                            - generic [ref=e422]: Community
+                            - generic [ref=e423]: 8/10
+                          - progressbar [ref=e424]
+                        - generic [ref=e426]:
+                          - generic [ref=e427]:
+                            - generic [ref=e428]: Product
+                            - generic [ref=e429]: 9/10
+                          - progressbar [ref=e430]
+                      - button "View Analysis" [ref=e433]:
+                        - text: View Analysis
+                        - img [ref=e434]
+                    - link "The Value Ladder Bait Frontend Core Offer Backend Continuity View Analysis" [ref=e436] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/value-ladder
+                      - heading "The Value Ladder" [level=3] [ref=e439]
+                      - generic [ref=e441]:
+                        - generic [ref=e442]:
+                          - generic [ref=e444]: Bait
+                          - generic [ref=e446]: Frontend
+                          - generic [ref=e448]: Core Offer
+                          - generic [ref=e450]: Backend
+                        - generic [ref=e451]: Continuity
+                      - button "View Analysis" [ref=e453]:
+                        - text: View Analysis
+                        - img [ref=e454]
+              - generic [ref=e456]:
+                - generic [ref=e458]:
+                  - generic [ref=e459]:
+                    - img [ref=e461]
+                    - heading "Start Building in 1-click" [level=3] [ref=e466]
+                  - paragraph [ref=e467]: Turn this idea into your business with pre-built prompts
+                  - generic [ref=e468]:
+                    - link "Ad Creatives High-converting ad copy and creative concepts" [ref=e469] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/build/ad-creatives
+                      - generic [ref=e470]:
+                        - generic [ref=e471]:
+                          - generic [ref=e472]: Ad Creatives
+                          - paragraph [ref=e473]: High-converting ad copy and creative concepts
+                        - img [ref=e474]
+                    - link "Brand Package Complete brand identity with logo, colors, and voice" [ref=e476] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/build/brand-package
+                      - generic [ref=e477]:
+                        - generic [ref=e478]:
+                          - generic [ref=e479]: Brand Package
+                          - paragraph [ref=e480]: Complete brand identity with logo, colors, and voice
+                        - img [ref=e481]
+                    - link "Landing Page Copy + wireframe blocks" [ref=e483] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/build/landing-page
+                      - generic [ref=e484]:
+                        - generic [ref=e485]:
+                          - generic [ref=e486]: Landing Page
+                          - paragraph [ref=e487]: Copy + wireframe blocks
+                        - img [ref=e488]
+                    - link "More prompts... View all available prompts" [ref=e490] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/build
+                      - generic [ref=e491]:
+                        - generic [ref=e492]:
+                          - generic [ref=e493]: More prompts...
+                          - paragraph [ref=e494]: View all available prompts
+                        - img [ref=e495]
+                  - generic [ref=e497]:
+                    - generic [ref=e498]: "Works with:"
+                    - generic [ref=e499]:
+                      - generic [ref=e500]:
+                        - generic "Lovable" [ref=e501]:
+                          - img "Lovable logo" [ref=e502]
+                        - generic "v0" [ref=e503]:
+                          - img "v0 logo" [ref=e504]
+                        - generic "Replit" [ref=e505]:
+                          - img "Replit logo" [ref=e506]
+                        - generic "ChatGPT" [ref=e507]:
+                          - img "ChatGPT logo" [ref=e508]
+                        - generic "Claude" [ref=e509]:
+                          - img "Claude logo" [ref=e510]
+                      - generic [ref=e511]: +more
+                - generic [ref=e514]:
+                  - button "Idea Actions Download, analyze & more" [ref=e515] [cursor=pointer]:
+                    - generic [ref=e516]:
+                      - img [ref=e518]
+                      - generic [ref=e520]:
+                        - heading "Idea Actions" [level=3] [ref=e521]
+                        - paragraph [ref=e522]: Download, analyze & more
+                    - img [ref=e523]
+                  - generic [ref=e526]:
+                    - link "Get Instant Answers AI Chat with this idea" [ref=e527] [cursor=pointer]:
+                      - /url: /chat/idea/credit-coach-for-future-homebuyers
+                      - img [ref=e529]
+                      - generic [ref=e531]:
+                        - heading "Get Instant Answers" [level=4] [ref=e532]
+                        - paragraph [ref=e533]: AI Chat with this idea
+                    - link "Download Data Export all research & analysis" [ref=e534] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/download-data
+                      - img [ref=e536]
+                      - generic [ref=e539]:
+                        - heading "Download Data" [level=4] [ref=e540]
+                        - paragraph [ref=e541]: Export all research & analysis
+                    - link "Founder Fit Is this idea right for you?" [ref=e542] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/founder-fit
+                      - img [ref=e544]
+                      - generic [ref=e548]:
+                        - heading "Founder Fit" [level=4] [ref=e549]
+                        - paragraph [ref=e550]: Is this idea right for you?
+                    - link "Claim Idea Make this idea yours" [ref=e551] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/claim-idea
+                      - img [ref=e554]
+                      - generic [ref=e556]:
+                        - heading "Claim Idea" [level=4] [ref=e557]
+                        - paragraph [ref=e558]: Make this idea yours
+                - generic [ref=e559]:
+                  - heading "Categorization" [level=3] [ref=e561]
+                  - generic [ref=e562]:
+                    - generic [ref=e563]:
+                      - paragraph [ref=e564]: Type
+                      - paragraph [ref=e565]: saas
+                    - generic [ref=e566]:
+                      - paragraph [ref=e567]: Market
+                      - paragraph [ref=e568]: B2C
+                    - generic [ref=e569]:
+                      - paragraph [ref=e570]: Target
+                      - paragraph [ref=e571]: first-time homebuyers
+                    - generic [ref=e572]:
+                      - paragraph [ref=e573]: Main Competitor
+                      - paragraph [ref=e574]: Credit Karma
+                  - generic [ref=e575]:
+                    - paragraph [ref=e576]: Trend Analysis
+                    - paragraph [ref=e577]: Growing demand for personalized financial coaching and advances in AI technology create strong market opportunities.
+                - generic [ref=e578]:
+                  - link "Community Signals" [ref=e580] [cursor=pointer]:
+                    - /url: /idea/credit-coach-for-future-homebuyers/community-signals
+                    - heading "Community Signals" [level=3] [ref=e581]
+                  - generic [ref=e582]:
+                    - link "Reddit Reddit 3 subreddits · 2.5M+ members 8 / 10" [ref=e583] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/community-signals/reddit-analysis
+                      - generic [ref=e584]:
+                        - img "Reddit" [ref=e586]
+                        - generic [ref=e587]:
+                          - generic [ref=e588]: Reddit
+                          - generic [ref=e589]: 3 subreddits · 2.5M+ members
+                      - generic [ref=e591]: 8 / 10
+                    - link "Facebook Facebook 4 groups · 150K+ members 7 / 10" [ref=e592] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/community-signals/facebook-analysis
+                      - generic [ref=e593]:
+                        - img "Facebook" [ref=e595]
+                        - generic [ref=e596]:
+                          - generic [ref=e597]: Facebook
+                          - generic [ref=e598]: 4 groups · 150K+ members
+                      - generic [ref=e600]: 7 / 10
+                    - link "YouTube YouTube 15 channels · views 7 / 10" [ref=e601] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/community-signals/youtube-analysis
+                      - generic [ref=e602]:
+                        - img "YouTube" [ref=e604]
+                        - generic [ref=e605]:
+                          - generic [ref=e606]: YouTube
+                          - generic [ref=e607]: 15 channels · views
+                      - generic [ref=e609]: 7 / 10
+                    - link "Other 5 segments · 3 priorities 8 / 10" [ref=e610] [cursor=pointer]:
+                      - /url: /idea/credit-coach-for-future-homebuyers/community-signals/other-communities
+                      - generic [ref=e611]:
+                        - img [ref=e613]
+                        - generic [ref=e616]:
+                          - generic [ref=e617]: Other
+                          - generic [ref=e618]: 5 segments · 3 priorities
+                      - generic [ref=e620]: 8 / 10
+                  - link "View detailed breakdown" [ref=e621] [cursor=pointer]:
+                    - /url: /idea/credit-coach-for-future-homebuyers/community-signals
+                    - text: View detailed breakdown
+                    - img [ref=e622]
+                - generic [ref=e811]:
+                  - heading "Top Keywords" [level=3] [ref=e814]
+                  - generic [ref=e815]:
+                    - generic [ref=e816]:
+                      - generic [ref=e817]: Fastest Growing
+                      - generic [ref=e818]:
+                        - link "how to rebuild credit fast LOW competition 33.1K" [ref=e819] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how to rebuild credit fast
+                          - generic [ref=e820]:
+                            - img [ref=e822]
+                            - generic [ref=e825]:
+                              - generic [ref=e826]: how to rebuild credit fast
+                              - generic [ref=e827]: LOW competition
+                          - generic [ref=e829]: 33.1K
+                        - link "how to improve credit fast LOW competition 33.1K" [ref=e830] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how to improve credit fast
+                          - generic [ref=e831]:
+                            - img [ref=e833]
+                            - generic [ref=e836]:
+                              - generic [ref=e837]: how to improve credit fast
+                              - generic [ref=e838]: LOW competition
+                          - generic [ref=e840]: 33.1K
+                        - link "how to raise credit fast LOW competition 33.1K" [ref=e841] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how to raise credit fast
+                          - generic [ref=e842]:
+                            - img [ref=e844]
+                            - generic [ref=e847]:
+                              - generic [ref=e848]: how to raise credit fast
+                              - generic [ref=e849]: LOW competition
+                          - generic [ref=e851]: 33.1K
+                    - generic [ref=e852]:
+                      - generic [ref=e853]: Highest Volume
+                      - generic [ref=e854]:
+                        - link "fix credit near me LOW competition 74.0K" [ref=e855] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=fix credit near me
+                          - generic [ref=e856]:
+                            - img [ref=e858]
+                            - generic [ref=e861]:
+                              - generic [ref=e862]: fix credit near me
+                              - generic [ref=e863]: LOW competition
+                          - generic [ref=e865]: 74.0K
+                        - link "first time home buyer programs HIGH competition 60.5K" [ref=e866] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=first time home buyer programs
+                          - generic [ref=e867]:
+                            - img [ref=e869]
+                            - generic [ref=e872]:
+                              - generic [ref=e873]: first time home buyer programs
+                              - generic [ref=e874]: HIGH competition
+                          - generic [ref=e876]: 60.5K
+                        - link "how to improve credit score LOW competition 60.5K" [ref=e877] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how to improve credit score
+                          - generic [ref=e878]:
+                            - img [ref=e880]
+                            - generic [ref=e883]:
+                              - generic [ref=e884]: how to improve credit score
+                              - generic [ref=e885]: LOW competition
+                          - generic [ref=e887]: 60.5K
+                    - generic [ref=e888]:
+                      - generic [ref=e889]: Most Relevant
+                      - generic [ref=e890]:
+                        - link "fix credit near me LOW competition 74.0K" [ref=e891] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=fix credit near me
+                          - generic [ref=e892]:
+                            - img [ref=e894]
+                            - generic [ref=e897]:
+                              - generic [ref=e898]: fix credit near me
+                              - generic [ref=e899]: LOW competition
+                          - generic [ref=e901]: 74.0K
+                        - link "how to improve credit score LOW competition 60.5K" [ref=e902] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how to improve credit score
+                          - generic [ref=e903]:
+                            - img [ref=e905]
+                            - generic [ref=e908]:
+                              - generic [ref=e909]: how to improve credit score
+                              - generic [ref=e910]: LOW competition
+                          - generic [ref=e912]: 60.5K
+                        - link "how can i increase credit score LOW competition 60.5K" [ref=e913] [cursor=pointer]:
+                          - /url: /idea/credit-coach-for-future-homebuyers/keywords?keyword=how can i increase credit score
+                          - generic [ref=e914]:
+                            - img [ref=e916]
+                            - generic [ref=e919]:
+                              - generic [ref=e920]: how can i increase credit score
+                              - generic [ref=e921]: LOW competition
+                          - generic [ref=e923]: 60.5K
+                  - link "View full keyword analysis" [ref=e924] [cursor=pointer]:
+                    - /url: /idea/credit-coach-for-future-homebuyers/keywords
+                    - text: View full keyword analysis
+                    - img [ref=e925]
+                - generic [ref=e633]:
+                  - heading "What'd you think of this idea?" [level=3] [ref=e634]
+                  - generic [ref=e635]:
+                    - button "rating rating rating Chef's kiss" [ref=e636] [cursor=pointer]:
+                      - generic [ref=e637]:
+                        - generic [ref=e638]:
+                          - img "rating" [ref=e640]
+                          - img "rating" [ref=e642]
+                          - img "rating" [ref=e644]
+                        - generic [ref=e645]: Chef's kiss
+                    - button "rating rating Pretty interesting" [ref=e646] [cursor=pointer]:
+                      - generic [ref=e647]:
+                        - generic [ref=e648]:
+                          - img "rating" [ref=e650]
+                          - img "rating" [ref=e652]
+                        - generic [ref=e653]: Pretty interesting
+                    - button "rating You didn't bring the heat" [ref=e654] [cursor=pointer]:
+                      - generic [ref=e655]:
+                        - img "rating" [ref=e658]
+                        - generic [ref=e659]: You didn't bring the heat
+          - generic [ref=e661]:
+            - generic [ref=e662]:
+              - heading "Get Instant Answers" [level=2] [ref=e663]
+              - paragraph [ref=e664]: Ask anything about this business idea
+            - generic [ref=e667]:
+              - generic [ref=e669]:
+                - textbox "Ask anything..." [ref=e670]
+                - button [disabled] [ref=e671]:
+                  - img [ref=e672]
+              - generic [ref=e676]:
+                - img "AI" [ref=e678]
+                - generic [ref=e679]: Powered by Idea Agent
+            - generic [ref=e680]:
+              - generic [ref=e681]: Popular questions
+              - generic [ref=e682]:
+                - button "What problem does this solve?" [ref=e683] [cursor=pointer]:
+                  - text: What problem does this solve?
+                  - img [ref=e684]
+                - button "How big is the market opportunity?" [ref=e686] [cursor=pointer]:
+                  - text: How big is the market opportunity?
+                  - img [ref=e687]
+                - button "What's the competitive landscape?" [ref=e689] [cursor=pointer]:
+                  - text: What's the competitive landscape?
+                  - img [ref=e690]
+                - button "What's the revenue model?" [ref=e692] [cursor=pointer]:
+                  - text: What's the revenue model?
+                  - img [ref=e693]
+                - button "How hard is it to build?" [ref=e695] [cursor=pointer]:
+                  - text: How hard is it to build?
+                  - img [ref=e696]
+                - button "What are the key risks?" [ref=e698] [cursor=pointer]:
+                  - text: What are the key risks?
+                  - img [ref=e699]
+          - paragraph [ref=e702]:
+            - strong [ref=e703]: "Important:"
+            - text: Revenue estimates, scores, and market data are illustrative based on research and assumptions. Results vary by execution, timing, and market conditions. Not investment or business advice.
+    - contentinfo [ref=e704]:
+      - generic [ref=e705]:
+        - generic [ref=e706]:
+          - generic [ref=e707]:
+            - link [ref=e708] [cursor=pointer]:
+              - /url: /
+              - img [ref=e709]
+            - paragraph [ref=e747]: Get ideas for profitable startups, trending keywords, and go-to-market tactics, powered by data.
+          - generic [ref=e749]:
+            - generic [ref=e750]:
+              - heading "Browse Ideas" [level=3] [ref=e751]
+              - list [ref=e752]:
+                - listitem [ref=e753]:
+                  - link "Idea of the Day" [ref=e754] [cursor=pointer]:
+                    - /url: /idea-of-the-day
+                - listitem [ref=e755]:
+                  - link "Idea Database" [ref=e756] [cursor=pointer]:
+                    - /url: /database
+                - listitem [ref=e757]:
+                  - link "Trends" [ref=e758] [cursor=pointer]:
+                    - /url: /trends
+                - listitem [ref=e759]:
+                  - link "Market Insights" [ref=e760] [cursor=pointer]:
+                    - /url: /market-insights
+            - generic [ref=e761]:
+              - heading "Tools" [level=3] [ref=e762]
+              - list [ref=e763]:
+                - listitem [ref=e764]:
+                  - link "Idea Generator" [ref=e765] [cursor=pointer]:
+                    - /url: /idea-generator
+                - listitem [ref=e766]:
+                  - link "Research Your Ideas" [ref=e767] [cursor=pointer]:
+                    - /url: /idea-agent
+                - listitem [ref=e768]:
+                  - link "Idea Builder" [ref=e769] [cursor=pointer]:
+                    - /url: /idea-builder
+                - listitem [ref=e770]:
+                  - link "Chat & Strategize" [ref=e771] [cursor=pointer]:
+                    - /url: /ai-chat
+                - listitem [ref=e772]:
+                  - link "Founder Fit" [ref=e773] [cursor=pointer]:
+                    - /url: /founder-fit
+            - generic [ref=e774]:
+              - heading "Resources" [level=3] [ref=e775]
+              - list [ref=e776]:
+                - listitem [ref=e777]:
+                  - link "Platform Tour" [ref=e778] [cursor=pointer]:
+                    - /url: /welcome-tour
+                - listitem [ref=e779]:
+                  - link "Features" [ref=e780] [cursor=pointer]:
+                    - /url: /features
+                - listitem [ref=e781]:
+                  - link "Tools Library" [ref=e782] [cursor=pointer]:
+                    - /url: /tools
+                - listitem [ref=e783]:
+                  - link "Pricing" [ref=e784] [cursor=pointer]:
+                    - /url: /pricing
+                - listitem [ref=e785]:
+                  - link "FAQ" [ref=e786] [cursor=pointer]:
+                    - /url: /frequently-asked-questions
+            - generic [ref=e787]:
+              - heading "Company" [level=3] [ref=e788]
+              - list [ref=e789]:
+                - listitem [ref=e790]:
+                  - link "About" [ref=e791] [cursor=pointer]:
+                    - /url: /about
+                - listitem [ref=e792]:
+                  - link "Success Stories" [ref=e793] [cursor=pointer]:
+                    - /url: /success-stories
+                - listitem [ref=e794]:
+                  - link "Announcements" [ref=e795] [cursor=pointer]:
+                    - /url: /announcements
+                - listitem [ref=e796]:
+                  - link "What's New" [ref=e797] [cursor=pointer]:
+                    - /url: /updates
+                - listitem [ref=e798]:
+                  - link "Contact & Support" [ref=e799] [cursor=pointer]:
+                    - /url: /contact
+        - generic [ref=e800]:
+          - generic [ref=e801]:
+            - paragraph [ref=e802]: © 2026 Ideabrowser. All rights reserved.
+            - generic [ref=e803]:
+              - link "Terms and Conditions" [ref=e804] [cursor=pointer]:
+                - /url: /terms
+              - link "Privacy Policy" [ref=e805] [cursor=pointer]:
+                - /url: /privacy
+              - link "Data Protection" [ref=e806] [cursor=pointer]:
+                - /url: /data-protection
+              - link "Disclaimer" [ref=e807] [cursor=pointer]:
+                - /url: /disclaimer
+          - paragraph [ref=e808]: Ideabrowser shares research and education, not promises or advice. Revenue estimates, scores, and examples are illustrative only; your results will vary. Always do your own due diligence.
+    - region "Notifications alt+T"
+  - region "Notifications alt+T"
+  - alert [ref=e809]
+  - generic [ref=e810]: "0"

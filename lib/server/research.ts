@@ -1,15 +1,17 @@
 import { getDateRange } from "@/lib/server/date";
 import {
   applyDateAndConfidenceReddit,
+  applyDateAndConfidenceYouTube,
   applyDateAndConfidenceWeb,
   applyDateAndConfidenceX,
   dedupeReddit,
+  dedupeYouTube,
   dedupeWeb,
   dedupeX,
   sortByScoreAndDate,
 } from "@/lib/server/processing";
-import { scoreReddit, scoreWeb, scoreX } from "@/lib/server/scoring";
-import { SearchParams, searchReddit, searchWeb, searchX } from "@/lib/server/search";
+import { scoreReddit, scoreWeb, scoreX, scoreYouTube } from "@/lib/server/scoring";
+import { SearchParams, searchReddit, searchWeb, searchX, searchYouTube } from "@/lib/server/search";
 import { synthesize } from "@/lib/server/synthesis";
 import { ResearchResponse, SourceType, UsageBreakdown } from "@/lib/types";
 
@@ -102,6 +104,7 @@ export async function runResearch(input: ResearchInput, options: ResearchRunOpti
   let rawReddit: Awaited<ReturnType<typeof searchReddit>>["items"] = [];
   let rawX: Awaited<ReturnType<typeof searchX>>["items"] = [];
   let rawWeb: Awaited<ReturnType<typeof searchWeb>>["items"] = [];
+  let rawYoutube: Awaited<ReturnType<typeof searchYouTube>>["items"] = [];
 
   const usageByOperation: ResearchResponse["usage"]["byOperation"] = {};
   const promises: Array<Promise<void>> = [];
@@ -199,6 +202,37 @@ export async function runResearch(input: ResearchInput, options: ResearchRunOpti
     );
   }
 
+  if (selectedSources.includes("youtube")) {
+    sourceStatus.youtube = "running";
+    emitProgress("searching", "Searching YouTube...");
+
+    promises.push(
+      searchYouTube(params)
+        .then((result) => {
+          rawYoutube = result.items;
+          usageByOperation.youtube = {
+            ...result.usage,
+            calls: 1,
+            model: result.model,
+          };
+          sourceStatus.youtube = "completed";
+        })
+        .catch((error) => {
+          errors.youtube = toErrorMessage(error);
+          sourceStatus.youtube = "failed";
+        })
+        .finally(() => {
+          completedSteps += 1;
+          emitProgress(
+            "searching",
+            sourceStatus.youtube === "completed"
+              ? `YouTube search complete (${rawYoutube.length} items).`
+              : "YouTube search failed.",
+          );
+        }),
+    );
+  }
+
   await Promise.all(promises);
 
   const limit = MAX_ITEMS_BY_DEPTH[depth];
@@ -229,16 +263,24 @@ export async function runResearch(input: ResearchInput, options: ResearchRunOpti
     ),
   ).slice(0, limit);
 
+  const youtube = sortByScoreAndDate(
+    dedupeYouTube(
+      scoreYouTube(
+        applyDateAndConfidenceYouTube(rawYoutube, range.from, range.to),
+      ),
+    ),
+  ).slice(0, limit);
+
   completedSteps += 1;
   emitProgress("processing", "Result processing complete.");
 
   let synthesis: ResearchResponse["synthesis"] = null;
-  const hasAnyResults = reddit.length > 0 || x.length > 0 || web.length > 0;
+  const hasAnyResults = reddit.length > 0 || x.length > 0 || web.length > 0 || youtube.length > 0;
 
   if (hasAnyResults) {
     emitProgress("synthesizing", "Synthesizing findings with Claude...");
     try {
-      const synthRun = await synthesize(topic, reddit, x, web);
+      const synthRun = await synthesize(topic, reddit, x, web, youtube);
       synthesis = synthRun.synthesis;
       usageByOperation.synthesis = {
         ...synthRun.usage,
@@ -267,13 +309,15 @@ export async function runResearch(input: ResearchInput, options: ResearchRunOpti
     reddit,
     x,
     web,
+    youtube,
     synthesis,
     errors,
     stats: {
-      total: reddit.length + x.length + web.length,
+      total: reddit.length + x.length + web.length + youtube.length,
       reddit: reddit.length,
       x: x.length,
       web: web.length,
+      youtube: youtube.length,
       elapsedMs,
       generatedAt: new Date().toISOString(),
     },
@@ -284,13 +328,13 @@ export async function runResearch(input: ResearchInput, options: ResearchRunOpti
 function normalizeSources(sources: SourceType[]): SourceType[] {
   const set = new Set<SourceType>();
   for (const source of sources) {
-    if (source === "reddit" || source === "x" || source === "web") {
+    if (source === "reddit" || source === "x" || source === "web" || source === "youtube") {
       set.add(source);
     }
   }
 
   if (!set.size) {
-    return ["reddit", "x", "web"];
+    return ["reddit", "x", "web", "youtube"];
   }
 
   return Array.from(set);

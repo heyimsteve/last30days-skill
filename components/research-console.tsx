@@ -2,13 +2,24 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { NichePlanResponse, NicheResearchDepth, NicheResearchProgressEvent, NicheResearchResponse, PlanOutputType } from "@/lib/niche-types";
+import {
+  NichePlanResponse,
+  NicheResearchDepth,
+  NicheResearchProgressEvent,
+  NicheResearchResponse,
+  PlanOutputType,
+  TokenUsageSummary,
+} from "@/lib/niche-types";
 
-const EXAMPLE_NICHES = [
+const DEFAULT_SUGGESTED_NICHES = [
   "Dental insurance claim denials",
   "Shopify refund abuse detection",
   "Home services quote follow-up",
   "YouTube creator sponsorship ops",
+  "Legal intake triage automation",
+  "Property management maintenance routing",
+  "Clinic prior auth paperwork",
+  "Freight broker load follow-ups",
 ];
 
 const PLAN_SEQUENCE: PlanOutputType[] = ["prd", "plan"];
@@ -38,6 +49,73 @@ interface ExportEnvelope {
   report: NicheResearchResponse;
 }
 
+interface ImportedRecoveryCheckpoint {
+  version: 1;
+  niche: string;
+  mode: NicheResearchDepth;
+  startedAt: number;
+  queries: string[];
+  totalSteps: number;
+  completedSteps: number;
+  usageTotals: TokenUsageSummary;
+  allRaw: {
+    reddit: unknown[];
+    x: unknown[];
+    web: unknown[];
+    youtube: unknown[];
+  };
+}
+
+interface RecoveryArtifactEnvelope {
+  app: "niche-validator-studio";
+  kind: "recovery-artifact";
+  version: 1;
+  checkpointKey?: string;
+  report?: unknown;
+  checkpoint?: unknown;
+  recoveryMessages?: unknown;
+}
+
+interface ImportedRecoverySnapshot {
+  checkpointKey: string;
+  checkpoint: ImportedRecoveryCheckpoint;
+  recoveryMessages: string[];
+}
+
+type ImportMode = "report" | "recovery";
+
+interface ResearchRunConfig {
+  niche: string;
+  depth: NicheResearchDepth;
+}
+
+type NicheRunStatus = "queued" | "running" | "paused" | "stopped" | "completed" | "failed";
+
+interface NicheRunState {
+  id: string;
+  niche: string;
+  query: string;
+  status: NicheRunStatus;
+  progress: NicheResearchProgressEvent | null;
+  report: NicheResearchResponse | null;
+  error: string | null;
+  estimatedTotalSteps: number;
+}
+
+interface BudgetEstimate {
+  niches: number;
+  tokens: number;
+  tokensLow: number;
+  tokensHigh: number;
+  costUsd: number;
+  costLowUsd: number;
+  costHighUsd: number;
+}
+
+interface SuggestionRequestOptions {
+  basedOnNiches?: string[];
+}
+
 const EMPTY_PLAN_STATE: PlanGenerationState = {
   stage: "idle",
   message: "",
@@ -48,13 +126,12 @@ const EMPTY_PLAN_STATE: PlanGenerationState = {
 };
 
 export function ResearchConsole() {
-  const [niche, setNiche] = useState("");
+  const [nicheInput, setNicheInput] = useState("");
   const [depth, setDepth] = useState<NicheResearchDepth>("default");
 
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<NicheResearchProgressEvent | null>(null);
+  const [nicheRuns, setNicheRuns] = useState<NicheRunState[]>([]);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
-  const [etaTargetAt, setEtaTargetAt] = useState<number | null>(null);
   const [clockNow, setClockNow] = useState(Date.now());
 
   const [report, setReport] = useState<NicheResearchResponse | null>(null);
@@ -68,7 +145,13 @@ export function ResearchConsole() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [importNote, setImportNote] = useState<string | null>(null);
 
+  const [suggestedNiches, setSuggestedNiches] = useState<string[]>(DEFAULT_SUGGESTED_NICHES);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
   const importFileRef = useRef<HTMLInputElement>(null);
+  const recoveryImportFileRef = useRef<HTMLInputElement>(null);
+  const runControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const runIntentRef = useRef<Map<string, "none" | "pause" | "stop">>(new Map());
 
   useEffect(() => {
     if (!loading && !planning) {
@@ -81,6 +164,20 @@ export function ResearchConsole() {
 
     return () => window.clearInterval(timer);
   }, [loading, planning]);
+
+  useEffect(() => {
+    void regenerateSuggestions();
+  }, []);
+
+  useEffect(() => {
+    const controllers = runControllersRef.current;
+    return () => {
+      for (const controller of controllers.values()) {
+        controller.abort();
+      }
+      controllers.clear();
+    };
+  }, []);
 
   const visibleCandidates = useMemo(() => {
     if (!report) {
@@ -98,6 +195,19 @@ export function ResearchConsole() {
     return visibleCandidates.find((candidate) => candidate.id === selectedId) ?? visibleCandidates[0];
   }, [selectedId, visibleCandidates]);
 
+  const selectedTrendNews = useMemo(() => {
+    if (!report) {
+      return [];
+    }
+
+    const candidateNiche = selectedCandidate?.requestedNiche?.trim().toLowerCase();
+    const run =
+      report.runs.find((entry) => candidateNiche && entry.niche.trim().toLowerCase() === candidateNiche) ??
+      report.runs.find((entry) => entry.status === "completed");
+
+    return run?.trendNews ?? [];
+  }, [report, selectedCandidate]);
+
   useEffect(() => {
     if (!visibleCandidates.length) {
       setSelectedId("");
@@ -110,29 +220,116 @@ export function ResearchConsole() {
   }, [selectedId, visibleCandidates]);
 
   const elapsedMs = runStartedAt ? Math.max(0, clockNow - runStartedAt) : 0;
-  const remainingMs = etaTargetAt ? Math.max(0, etaTargetAt - clockNow) : 0;
-  const progressPercent = progress ? Math.round((progress.completedSteps / progress.totalSteps) * 100) : 0;
-
   const planElapsedMs = planState.startedAt ? Math.max(0, clockNow - planState.startedAt) : 0;
   const planRemainingMs = planState.etaTargetAt ? Math.max(0, planState.etaTargetAt - clockNow) : 0;
   const planProgressPercent = planState.total
     ? Math.round((planState.completed / planState.total) * 100)
     : 0;
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const inputNiches = parseCommaNiches(nicheInput);
+  const budgetEstimate = useMemo<BudgetEstimate>(() => {
+    return estimateBudget(inputNiches.length ? inputNiches.length : 1, depth);
+  }, [depth, inputNiches.length]);
 
-    setLoading(true);
-    setError(null);
-    setPlanError(null);
-    setImportNote(null);
-    setPlanResults({});
-    setPlanState(EMPTY_PLAN_STATE);
-    setReport(null);
-    setProgress(null);
-    setRunStartedAt(Date.now());
-    setEtaTargetAt(null);
-    setClockNow(Date.now());
+  const hasActiveRuns = useMemo(
+    () => nicheRuns.some((run) => run.status === "queued" || run.status === "running"),
+    [nicheRuns],
+  );
+  const hasPausedRuns = useMemo(() => nicheRuns.some((run) => run.status === "paused"), [nicheRuns]);
+  const runBoardVisible = hasActiveRuns || hasPausedRuns;
+  const runSummaryVisible = !runBoardVisible && nicheRuns.length > 0;
+  const loadingLabel =
+    nicheRuns.length > 1
+      ? "Running parallel research..."
+      : "Running research...";
+
+  const aggregateProgress = useMemo(() => {
+    const running = nicheRuns.filter((run) => run.status === "running").length;
+    const complete = nicheRuns.filter((run) => run.status === "completed").length;
+    const failed = nicheRuns.filter((run) => run.status === "failed" || run.status === "stopped").length;
+    const paused = nicheRuns.filter((run) => run.status === "paused").length;
+
+    const completedSteps = nicheRuns.reduce((sum, run) => {
+      if (run.progress) {
+        return sum + run.progress.completedSteps;
+      }
+      if (run.status === "completed") {
+        return sum + run.estimatedTotalSteps;
+      }
+      return sum;
+    }, 0);
+
+    const totalSteps = nicheRuns.reduce((sum, run) => sum + run.estimatedTotalSteps, 0);
+    const etaMs = nicheRuns.reduce((max, run) => {
+      if (run.status !== "running") {
+        return max;
+      }
+      return Math.max(max, run.progress?.etaMs ?? 0);
+    }, 0);
+
+    const lead = nicheRuns.find((run) => run.status === "running" && run.progress?.message)?.progress?.message;
+
+    return {
+      running,
+      complete,
+      failed,
+      paused,
+      completedSteps,
+      totalSteps,
+      etaMs,
+      percent: totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0,
+      message:
+        lead ||
+        (running
+          ? running > 1
+            ? `Running ${running} niche workers in parallel.`
+            : "Running research."
+          : paused
+            ? "All running work is paused."
+            : complete || failed
+              ? "Research workers finished."
+              : "Preparing niche workers..."),
+    };
+  }, [nicheRuns]);
+
+  useEffect(() => {
+    const hasActive = nicheRuns.some((run) => run.status === "queued" || run.status === "running");
+    const hasPaused = nicheRuns.some((run) => run.status === "paused");
+    setLoading(hasActive);
+
+    if (hasActive || hasPaused) {
+      return;
+    }
+
+    const completedReports = nicheRuns
+      .filter((run) => run.status === "completed" && run.report)
+      .map((run) => run.report as NicheResearchResponse);
+
+    if (!completedReports.length) {
+      return;
+    }
+
+    setReport(combineReportsFromRuns(completedReports, nicheRuns, depth));
+  }, [depth, nicheRuns]);
+
+  async function startResearchRun(run: ResearchRunConfig, runId: string) {
+    const controller = new AbortController();
+    runControllersRef.current.set(runId, controller);
+    runIntentRef.current.set(runId, "none");
+
+    setNicheRuns((current) =>
+      current.map((entry) =>
+        entry.id === runId
+          ? {
+              ...entry,
+              status: "running",
+              progress: null,
+              error: null,
+              report: null,
+            }
+          : entry,
+      ),
+    );
 
     try {
       const response = await fetch("/api/research/stream", {
@@ -141,25 +338,40 @@ export function ResearchConsole() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          niche: niche.trim(),
-          depth,
+          niche: run.niche,
+          depth: run.depth,
+          resumeKey: runId,
         }),
+        signal: controller.signal,
       });
 
       const contentType = response.headers.get("content-type") ?? "";
       if (!response.ok) {
+        let message = "Niche validation request failed.";
         if (contentType.includes("application/json")) {
           const payload = (await response.json()) as { error?: string };
-          setError(payload.error ?? "Niche validation request failed.");
-        } else {
-          setError("Niche validation request failed.");
+          message = payload.error ?? message;
         }
+
+        setNicheRuns((current) =>
+          current.map((entry) =>
+            entry.id === runId
+              ? toFailedRunState(entry, message)
+              : entry,
+          ),
+        );
         return;
       }
 
       const body = response.body;
       if (!body) {
-        setError("No stream received from niche validator endpoint.");
+        setNicheRuns((current) =>
+          current.map((entry) =>
+            entry.id === runId
+              ? toFailedRunState(entry, "No stream received from niche validator endpoint.")
+              : entry,
+          ),
+        );
         return;
       }
 
@@ -170,6 +382,10 @@ export function ResearchConsole() {
       let gotError = false;
 
       while (true) {
+        if (controller.signal.aborted) {
+          break;
+        }
+
         const { value, done } = await reader.read();
         if (done) {
           break;
@@ -206,34 +422,271 @@ export function ResearchConsole() {
           }
 
           if (payload.type === "progress" && payload.progress) {
-            setProgress(payload.progress);
-            setEtaTargetAt(Date.now() + payload.progress.etaMs);
+            setNicheRuns((current) =>
+              current.map((entry) =>
+                entry.id === runId
+                  ? entry.status !== "queued" && entry.status !== "running"
+                    ? entry
+                    : {
+                        ...entry,
+                        progress: payload.progress ?? null,
+                        status: "running",
+                      }
+                  : entry,
+              ),
+            );
             continue;
           }
 
           if (payload.type === "result" && payload.report) {
             gotResult = true;
-            setReport(payload.report);
+            setNicheRuns((current) =>
+              current.map((entry) =>
+                entry.id === runId
+                  ? entry.status === "failed" || entry.status === "stopped"
+                    ? entry
+                    : (() => {
+                        const runWarning = payload.report?.runs[0]?.error ?? null;
+                        return {
+                        ...entry,
+                        status: "completed",
+                        report: payload.report ?? null,
+                        progress: {
+                          stage: "complete",
+                          message: runWarning
+                            ? `Niche validation complete with recovery notes.`
+                            : "Niche validation complete.",
+                          elapsedMs: payload.report?.stats.elapsedMs ?? entry.progress?.elapsedMs ?? 0,
+                          etaMs: 0,
+                          completedSteps: entry.estimatedTotalSteps,
+                          totalSteps: entry.estimatedTotalSteps,
+                        },
+                        error: runWarning,
+                        };
+                      })()
+                  : entry,
+              ),
+            );
             continue;
           }
 
           if (payload.type === "error") {
             gotError = true;
-            setError(payload.error ?? "Niche validation failed.");
+            setNicheRuns((current) =>
+              current.map((entry) =>
+                entry.id === runId
+                  ? toFailedRunState(entry, payload.error ?? "Niche validation failed.")
+                  : entry,
+              ),
+            );
           }
         }
       }
 
-      if (!gotResult && !gotError) {
-        setError("Validation stream ended before a final result was returned.");
+      if (!gotResult && !gotError && !controller.signal.aborted) {
+        setNicheRuns((current) =>
+          current.map((entry) =>
+            entry.id === runId
+              ? toFailedRunState(entry, "Validation stream ended before a final result was returned.")
+              : entry,
+          ),
+        );
       }
     } catch (requestError) {
+      if (
+        (requestError instanceof DOMException && requestError.name === "AbortError") ||
+        (requestError instanceof Error && requestError.name === "AbortError")
+      ) {
+        return;
+      }
+
       const message = requestError instanceof Error ? requestError.message : "Unexpected request failure.";
-      setError(message);
+      setNicheRuns((current) =>
+        current.map((entry) =>
+          entry.id === runId
+            ? toFailedRunState(entry, message)
+            : entry,
+        ),
+      );
     } finally {
-      setLoading(false);
-      setEtaTargetAt(null);
+      const intent = runIntentRef.current.get(runId) ?? "none";
+      runControllersRef.current.delete(runId);
+      runIntentRef.current.set(runId, "none");
+
+      if (intent === "pause") {
+        setNicheRuns((current) =>
+          current.map((entry) =>
+            entry.id === runId && entry.status !== "completed"
+              ? {
+                  ...entry,
+                  status: "paused",
+                  progress: {
+                    stage: "discovering",
+                    message: "Paused by user.",
+                    elapsedMs: entry.progress?.elapsedMs ?? 0,
+                    etaMs: 0,
+                    completedSteps: entry.progress?.completedSteps ?? 0,
+                    totalSteps: entry.progress?.totalSteps ?? entry.estimatedTotalSteps,
+                  },
+                }
+              : entry,
+          ),
+        );
+      }
+
+      if (intent === "stop") {
+        setNicheRuns((current) =>
+          current.map((entry) =>
+            entry.id === runId && entry.status !== "completed"
+              ? {
+                  ...entry,
+                  status: "stopped",
+                  progress: {
+                    stage: "complete",
+                    message: "Stopped by user.",
+                    elapsedMs: entry.progress?.elapsedMs ?? 0,
+                    etaMs: 0,
+                    completedSteps: entry.progress?.completedSteps ?? 0,
+                    totalSteps: entry.progress?.totalSteps ?? entry.estimatedTotalSteps,
+                  },
+                  error: "Stopped by user",
+                }
+              : entry,
+          ),
+        );
+      }
     }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    for (const controller of runControllersRef.current.values()) {
+      controller.abort();
+    }
+    runControllersRef.current.clear();
+    runIntentRef.current.clear();
+
+    const targets = inputNiches.length ? inputNiches : [""];
+    const startedAt = Date.now();
+    const batchId = `${startedAt}-${Math.floor(Math.random() * 1_000_000)}`;
+    const initialRuns = targets.map((niche, index) => createRunState(niche, depth, index, batchId));
+
+    setRunStartedAt(startedAt);
+    setClockNow(startedAt);
+    setError(null);
+    setPlanError(null);
+    setImportNote(null);
+    setPlanResults({});
+    setPlanState(EMPTY_PLAN_STATE);
+    setReport(null);
+    setNicheRuns(initialRuns);
+
+    await Promise.all(initialRuns.map((run) => startResearchRun({ niche: run.query, depth }, run.id)));
+  }
+
+  function pauseNiche(runId: string) {
+    const controller = runControllersRef.current.get(runId);
+    if (!controller) {
+      return;
+    }
+    runIntentRef.current.set(runId, "pause");
+    controller.abort();
+  }
+
+  function stopNiche(runId: string) {
+    const controller = runControllersRef.current.get(runId);
+    if (controller) {
+      runIntentRef.current.set(runId, "stop");
+      controller.abort();
+      return;
+    }
+
+    setNicheRuns((current) =>
+      current.map((entry) =>
+        entry.id === runId && (entry.status === "paused" || entry.status === "queued")
+          ? {
+              ...entry,
+              status: "stopped",
+              error: "Stopped by user",
+              progress: {
+                stage: "complete",
+                message: "Stopped by user.",
+                elapsedMs: entry.progress?.elapsedMs ?? 0,
+                etaMs: 0,
+                completedSteps: entry.progress?.completedSteps ?? 0,
+                totalSteps: entry.progress?.totalSteps ?? entry.estimatedTotalSteps,
+              },
+            }
+          : entry,
+      ),
+    );
+  }
+
+  function resumeNiche(runId: string) {
+    const run = nicheRuns.find((entry) => entry.id === runId);
+    if (!run || run.status !== "paused") {
+      return;
+    }
+
+    void startResearchRun({ niche: run.query, depth }, runId);
+  }
+
+  async function regenerateSuggestions(options: SuggestionRequestOptions = {}) {
+    setSuggestionsLoading(true);
+    try {
+      const response = await fetch("/api/research/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          count: 8,
+          niches: options.basedOnNiches ?? [],
+        }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { suggestions?: unknown };
+      if (!Array.isArray(payload.suggestions)) {
+        return;
+      }
+
+      const suggestions = payload.suggestions
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 12);
+
+      if (suggestions.length) {
+        setSuggestedNiches(suggestions);
+      }
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }
+
+  function onGenerateFromNiches() {
+    const niches = parseCommaNiches(nicheInput);
+    if (!niches.length) {
+      return;
+    }
+    void regenerateSuggestions({ basedOnNiches: niches });
+  }
+
+  function appendSuggestedNiche(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const existing = parseCommaNiches(nicheInput);
+    if (existing.includes(trimmed)) {
+      return;
+    }
+
+    const next = [...existing, trimmed].join(", ");
+    setNicheInput(next);
   }
 
   async function onGenerateOutputs() {
@@ -328,7 +781,8 @@ export function ResearchConsole() {
 
     const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const fileName = `${toSlug(report.query || "auto-niche")}-${report.generatedAt.slice(0, 10)}-research.json`;
+    const baseName = report.queries.length > 1 ? `multi-${report.queries.length}-niches` : report.query || "auto-niche";
+    const fileName = `${toSlug(baseName)}-${report.generatedAt.slice(0, 10)}-research.json`;
     const link = document.createElement("a");
     link.href = url;
     link.download = fileName;
@@ -338,11 +792,15 @@ export function ResearchConsole() {
     URL.revokeObjectURL(url);
   }
 
-  function openImportDialog() {
+  function openImportDialog(mode: ImportMode) {
+    if (mode === "recovery") {
+      recoveryImportFileRef.current?.click();
+      return;
+    }
     importFileRef.current?.click();
   }
 
-  async function onImportResults(event: ChangeEvent<HTMLInputElement>) {
+  async function onImportResults(event: ChangeEvent<HTMLInputElement>, mode: ImportMode) {
     const file = event.target.files?.[0];
     event.target.value = "";
 
@@ -354,19 +812,95 @@ export function ResearchConsole() {
       const text = await file.text();
       const parsed = JSON.parse(text) as unknown;
       const imported = extractResearchReport(parsed);
-      if (!imported) {
+      const recoverySnapshot = extractRecoverySnapshot(parsed);
+
+      if (mode === "report" && !imported) {
         setError("Invalid research export file. Expected a Niche Validator research payload.");
         return;
       }
 
-      setReport(imported);
+      if (mode === "recovery" && !recoverySnapshot) {
+        setError("Invalid recovery snapshot file. Expected a saved recovery artifact.");
+        return;
+      }
+
+      let recoveryImportMessage = "";
+      if (recoverySnapshot) {
+        const importResponse = await fetch("/api/research/recovery/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeKey: recoverySnapshot.checkpointKey,
+            checkpoint: recoverySnapshot.checkpoint,
+          }),
+        });
+
+        if (importResponse.ok) {
+          const resumedRun = createRunState(
+            recoverySnapshot.checkpoint.niche,
+            recoverySnapshot.checkpoint.mode,
+            0,
+            "recovery",
+          );
+          const completedSteps = Math.max(
+            0,
+            Math.min(recoverySnapshot.checkpoint.completedSteps, recoverySnapshot.checkpoint.totalSteps),
+          );
+          resumedRun.id = recoverySnapshot.checkpointKey;
+          resumedRun.niche = recoverySnapshot.checkpoint.niche || "auto-discovery";
+          resumedRun.query = recoverySnapshot.checkpoint.niche;
+          resumedRun.status = "paused";
+          resumedRun.error = recoverySnapshot.recoveryMessages.join(" ").trim() || null;
+          resumedRun.progress = {
+            stage: "discovering",
+            message: "Imported recovery snapshot. Click Resume to continue from checkpoint.",
+            elapsedMs: Math.max(0, Date.now() - recoverySnapshot.checkpoint.startedAt),
+            etaMs: 0,
+            completedSteps,
+            totalSteps: recoverySnapshot.checkpoint.totalSteps,
+          };
+          resumedRun.estimatedTotalSteps = recoverySnapshot.checkpoint.totalSteps;
+
+          setDepth(recoverySnapshot.checkpoint.mode);
+          setNicheInput(recoverySnapshot.checkpoint.niche);
+          setNicheRuns([resumedRun]);
+          setRunStartedAt(recoverySnapshot.checkpoint.startedAt);
+          setClockNow(Date.now());
+          recoveryImportMessage = ` Resume is available from step ${completedSteps}/${recoverySnapshot.checkpoint.totalSteps}.`;
+        } else {
+          recoveryImportMessage = " Loaded report view, but checkpoint resume import failed.";
+        }
+      }
+
+      if (imported) {
+        setReport(imported);
+      } else if (mode === "recovery") {
+        setReport(null);
+      }
       setError(null);
       setPlanError(null);
-      setImportNote(`Loaded research from ${file.name}.`);
+      if (mode === "recovery") {
+        setImportNote(
+          imported
+            ? `Loaded recovery snapshot from ${file.name}.${recoveryImportMessage}`
+            : `Loaded checkpoint-only recovery snapshot from ${file.name}.${recoveryImportMessage}`,
+        );
+      } else {
+        setImportNote(`Loaded research from ${file.name}.${recoveryImportMessage}`);
+      }
       setPlanResults({});
       setPlanState(EMPTY_PLAN_STATE);
+      if (!recoverySnapshot) {
+        setNicheRuns([]);
+        setLoading(false);
+        setRunStartedAt(null);
+      }
     } catch {
-      setError("Could not import file. Make sure it is valid JSON exported from this app.");
+      setError(
+        mode === "recovery"
+          ? "Could not import recovery snapshot. Make sure it is valid JSON exported from this app."
+          : "Could not import file. Make sure it is valid JSON exported from this app.",
+      );
     }
   }
 
@@ -400,29 +934,46 @@ export function ResearchConsole() {
     <div className="nv-page">
       <header className="nv-hero">
         <p className="nv-kicker">Niche Validator Studio</p>
-        <h1>Find AI-buildable niches with real spending, pain, and launch room.</h1>
+        <h1>Find buildable AI businesses with proof, not vibes.</h1>
         <p>
-          Enter a niche or leave blank to discover opportunities from Reddit, X, and the Web across the last 30 days.
-          Select a validated niche and generate both a PRD and execution plan.
+          Enter one or more niches separated by commas and run all research in parallel. Every winning idea includes
+          demand, market, monetization, GTM, build blueprint, and validation experiments from Reddit, X, web, and
+          YouTube signals.
         </p>
       </header>
 
       <div className="nv-shell">
         <section className="nv-card nv-form-card">
           <form onSubmit={onSubmit} className="nv-form">
-            <label htmlFor="niche">Niche (optional)</label>
+            <label htmlFor="niche">Niches (optional, comma-separated)</label>
             <textarea
               id="niche"
-              value={niche}
-              onChange={(event) => setNiche(event.target.value)}
-              placeholder="Example: AI workflow automation for dental practices"
-              rows={4}
+              value={nicheInput}
+              onChange={(event) => setNicheInput(event.target.value)}
+              placeholder="Example: dental billing automation, med spa lead follow-up, freight broker dispatch ops"
+              rows={5}
             />
-            <small className="nv-hint">Leave blank to discover niches from all sources in the last 30 days.</small>
+            <small className="nv-hint">
+              Leave blank to auto-discover. Add multiple niches to run them in parallel.
+            </small>
+
+            <div className="nv-suggestion-head">
+              <span>Suggested niches</span>
+              <div className="nv-inline-actions">
+                <button type="button" className="nv-ghost" onClick={() => void regenerateSuggestions()} disabled={suggestionsLoading}>
+                  {suggestionsLoading ? "Regenerating..." : "Regen list"}
+                </button>
+                {inputNiches.length ? (
+                  <button type="button" className="nv-ghost" onClick={onGenerateFromNiches} disabled={suggestionsLoading}>
+                    Generate based on niches
+                  </button>
+                ) : null}
+              </div>
+            </div>
 
             <div className="nv-example-row">
-              {EXAMPLE_NICHES.map((example) => (
-                <button type="button" key={example} className="nv-chip" onClick={() => setNiche(example)}>
+              {suggestedNiches.map((example) => (
+                <button type="button" key={example} className="nv-chip" onClick={() => appendSuggestedNiche(example)}>
                   {example}
                 </button>
               ))}
@@ -448,13 +999,30 @@ export function ResearchConsole() {
             {error ? <p className="nv-error">{error}</p> : null}
             {importNote ? <p className="nv-note">{importNote}</p> : null}
 
+            <div className="nv-estimate">
+              <strong>Estimated total research usage</strong>
+              <small>
+                {budgetEstimate.niches} niche{budgetEstimate.niches === 1 ? "" : "s"} •{" "}
+                {formatNumber(budgetEstimate.tokens)} tokens (~{formatNumber(budgetEstimate.tokensLow)}-
+                {formatNumber(budgetEstimate.tokensHigh)}) • ${budgetEstimate.costUsd.toFixed(2)} (~$
+                {budgetEstimate.costLowUsd.toFixed(2)}-${budgetEstimate.costHighUsd.toFixed(2)})
+              </small>
+            </div>
+
             <button type="submit" className="nv-submit" disabled={loading}>
-              {loading ? "Validating niches..." : "Run Niche Validator"}
+              {loading
+                ? loadingLabel
+                : inputNiches.length > 1
+                  ? `Run ${inputNiches.length} Niches In Parallel`
+                  : "Run Niche Validator"}
             </button>
 
             <div className="nv-file-actions">
-              <button type="button" className="nv-ghost" onClick={openImportDialog}>
+              <button type="button" className="nv-ghost" onClick={() => openImportDialog("report")}>
                 Import Results
+              </button>
+              <button type="button" className="nv-ghost" onClick={() => openImportDialog("recovery")}>
+                Import Recovery Snapshot
               </button>
               <button type="button" className="nv-ghost" onClick={exportResearchResults} disabled={!report}>
                 Export Results
@@ -465,38 +1033,162 @@ export function ResearchConsole() {
               type="file"
               accept="application/json"
               className="nv-hidden-input"
-              onChange={onImportResults}
+              onChange={(event) => void onImportResults(event, "report")}
+            />
+            <input
+              ref={recoveryImportFileRef}
+              type="file"
+              accept="application/json"
+              className="nv-hidden-input"
+              onChange={(event) => void onImportResults(event, "recovery")}
             />
           </form>
         </section>
 
         <section className="nv-card nv-results-card">
-          {loading ? (
+          {runBoardVisible ? (
             <div className="nv-loading">
-              <div className="nv-spinner" aria-hidden />
-              <h3>{progress?.message ?? "Starting niche validator..."}</h3>
+              {hasActiveRuns ? <div className="nv-spinner" aria-hidden /> : null}
+              <h3>{aggregateProgress.message}</h3>
               <p>
                 Elapsed <strong>{formatDuration(elapsedMs)}</strong>
-                {etaTargetAt ? (
+                {aggregateProgress.etaMs > 0 ? (
                   <>
                     {" "}
-                    • ETA <strong>{formatDuration(remainingMs)}</strong>
+                    • ETA <strong>{formatDuration(aggregateProgress.etaMs)}</strong>
                   </>
                 ) : null}
               </p>
               <div className="nv-progress-track" aria-hidden>
-                <div className="nv-progress-fill" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
+                <div
+                  className="nv-progress-fill"
+                  style={{ width: `${Math.max(0, Math.min(100, aggregateProgress.percent))}%` }}
+                />
               </div>
               <small>
-                {progress?.completedSteps ?? 0}/{progress?.totalSteps ?? 0} steps complete
+                {aggregateProgress.completedSteps}/{aggregateProgress.totalSteps} estimated steps •{" "}
+                {aggregateProgress.complete}/{nicheRuns.length} runs complete
+                {aggregateProgress.paused ? ` • ${aggregateProgress.paused} paused` : ""}
+                {aggregateProgress.failed ? ` • ${aggregateProgress.failed} stopped/failed` : ""}
               </small>
+
+              <div className="nv-niche-progress-grid">
+                {nicheRuns.map((run) => {
+                  const completedSteps = run.progress?.completedSteps ?? (run.status === "completed" ? run.estimatedTotalSteps : 0);
+                  const totalSteps = run.progress?.totalSteps ?? run.estimatedTotalSteps;
+                  const percent = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
+                  const failureReason =
+                    run.status === "failed" || run.status === "stopped"
+                      ? getRunFailureReason(run)
+                      : null;
+                  const message =
+                    (run.status === "failed" || run.status === "stopped"
+                      ? failureReason
+                      : run.progress?.message) ||
+                    (run.status === "paused"
+                      ? "Paused by user."
+                      : run.status === "stopped"
+                        ? "Stopped by user."
+                        : run.status === "completed"
+                          ? "Niche validation complete."
+                          : run.status === "failed"
+                            ? "Niche validation failed."
+                            : run.status === "queued"
+                              ? "Queued and waiting for worker."
+                              : "Running research...");
+
+                  return (
+                    <article key={run.id} className={`nv-niche-progress is-${run.status}`}>
+                      <header>
+                        <strong>{run.niche}</strong>
+                        <span>{statusLabel(run.status)}</span>
+                      </header>
+                      <p>{message}</p>
+                      <div className="nv-progress-track" aria-hidden>
+                        <div className="nv-progress-fill" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
+                      </div>
+                      <small>
+                        {completedSteps}/{totalSteps} steps
+                        {run.status === "running" && run.progress?.etaMs ? ` • ETA ${formatDuration(run.progress.etaMs)}` : ""}
+                      </small>
+                      {failureReason ? <p className="nv-failure-reason">Reason: {failureReason}</p> : null}
+                      {failureReason ? (
+                        <ul className="nv-failure-guidance">
+                          {failureSuggestions(failureReason, run.niche).map((tip) => (
+                            <li key={`${run.id}-${tip}`}>{tip}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {run.status === "running" || run.status === "paused" || run.status === "queued" ? (
+                        <div className="nv-niche-actions">
+                          <button
+                            type="button"
+                            className="nv-ghost"
+                            onClick={() => pauseNiche(run.id)}
+                            disabled={run.status !== "running"}
+                          >
+                            Pause
+                          </button>
+                          <button
+                            type="button"
+                            className="nv-ghost nv-ghost-strong"
+                            onClick={() => resumeNiche(run.id)}
+                            disabled={run.status !== "paused"}
+                          >
+                            Resume
+                          </button>
+                          <button
+                            type="button"
+                            className="nv-ghost nv-ghost-danger"
+                            onClick={() => stopNiche(run.id)}
+                            disabled={run.status !== "running" && run.status !== "paused" && run.status !== "queued"}
+                          >
+                            Stop
+                          </button>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 
-          {!report && !loading ? (
+          {runSummaryVisible ? (
+            <div className="nv-run-summary">
+              <h3>Research finished.</h3>
+              <div className="nv-run-strip">
+                {nicheRuns.map((run) => (
+                  <div key={run.id} className={`nv-run-pill ${run.status === "completed" ? "" : "is-failed"}`}>
+                    <strong>{run.niche}</strong>
+                    <span>
+                      {run.status === "completed"
+                        ? `${run.report?.candidates.length ?? 0} ideas${run.error ? " • partial recovery" : ""}`
+                        : getRunFailureReason(run)}
+                    </span>
+                    {run.status === "completed" && run.error ? (
+                      <small className="nv-run-warning">{run.error}</small>
+                    ) : null}
+                    {run.status !== "completed" ? (
+                      <ul className="nv-failure-guidance">
+                        {failureSuggestions(getRunFailureReason(run), run.niche).map((tip) => (
+                          <li key={`${run.id}-${tip}`}>{tip}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {!report && !loading && !runBoardVisible && !runSummaryVisible ? (
             <div className="nv-empty">
               <h2>Ready to validate.</h2>
-              <p>Run a search to identify niches with buyer spend, recurring pain, and a launchable community.</p>
+              <p>
+                Run a search to identify niches with buyer spend, recurring pain, and launch room. Multi-niche runs are
+                processed in parallel.
+              </p>
             </div>
           ) : null}
 
@@ -504,13 +1196,13 @@ export function ResearchConsole() {
             <>
               <div className="nv-summary-bar">
                 <StatTile label="Candidates" value={report.stats.total} />
-                <StatTile label="All 3 checks pass" value={report.stats.passed} />
+                <StatTile label="Niche runs" value={`${report.stats.runsCompleted}/${report.stats.runsTotal}`} />
                 <StatTile label="Mode" value={report.mode} />
                 <StatTile label="Runtime" value={formatDuration(report.stats.elapsedMs)} />
               </div>
 
               <div className="nv-summary-meta">
-                <span>{report.discoveryMode ? "Auto-discovery mode" : `Focused niche: ${report.query || "n/a"}`}</span>
+                <span>{report.discoveryMode ? "Auto-discovery mode" : `Focused niches: ${report.queries.join(", ")}`}</span>
                 <span>
                   Window: {report.range.from} to {report.range.to}
                 </span>
@@ -529,11 +1221,27 @@ export function ResearchConsole() {
                 </span>
               </div>
 
+              <div className="nv-run-strip">
+                {report.runs.map((run) => (
+                  <div key={run.niche} className={`nv-run-pill ${run.status === "failed" ? "is-failed" : ""}`}>
+                    <strong>{run.niche}</strong>
+                    <span>
+                      {run.status === "completed"
+                        ? `${run.candidateCount} ideas${run.error ? " • partial recovery" : ""}`
+                        : run.error || "failed"}
+                    </span>
+                    {run.status === "completed" && run.error ? (
+                      <small className="nv-run-warning">{run.error}</small>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
               {visibleCandidates.length ? (
-                <p className="nv-pass-note">Showing only niches that passed spending, pain, and room checks.</p>
+                <p className="nv-pass-note">Showing vetted ideas with full dossier output for each niche.</p>
               ) : (
                 <p className="nv-pass-note is-warning">
-                  No niches passed all three checks in this run. Try a different niche or switch to deep research.
+                  No niches passed all checks in this run. Try a deeper search or refine your niche input.
                 </p>
               )}
 
@@ -558,7 +1266,10 @@ export function ResearchConsole() {
                           <CheckPill label="Pain" pass={candidate.checks.pain.passed} />
                           <CheckPill label="Room" pass={candidate.checks.room.passed} />
                         </div>
-                        <small>Score {candidate.score}/100</small>
+                        <small>
+                          Score {candidate.score}/100
+                          {candidate.requestedNiche ? ` • from ${candidate.requestedNiche}` : ""}
+                        </small>
                       </button>
                     );
                   })}
@@ -576,19 +1287,152 @@ export function ResearchConsole() {
                     <h2>{selectedCandidate.name}</h2>
                   </header>
 
-                  <p className="nv-lead">{selectedCandidate.aiBuildAngle}</p>
+                  <p className="nv-lead">{selectedCandidate.problemStatement}</p>
                   <p className="nv-meta">
-                    Audience: {selectedCandidate.audience || "n/a"} • Community: {selectedCandidate.checks.room.communityName}
+                    ICP: {selectedCandidate.icp || selectedCandidate.audience || "n/a"}
+                    {selectedCandidate.requestedNiche ? ` • Requested niche: ${selectedCandidate.requestedNiche}` : ""}
                   </p>
 
-                  <div className="nv-detail-grid">
-                    <CheckBlock title="Spending" lines={selectedCandidate.checks.spending.evidence} />
-                    <CheckBlock title="Pain" lines={selectedCandidate.checks.pain.evidence} />
-                    <CheckBlock title="Room" lines={selectedCandidate.checks.room.evidence} />
+                  <div className="nv-detail-grid nv-dossier-grid">
+                    <DataBlock title="Demand Snapshot" lines={[
+                      selectedCandidate.demand.trendSummary,
+                      ...selectedCandidate.demand.urgencyDrivers,
+                      ...selectedCandidate.demand.buyingSignals,
+                    ]} />
+                    <DataBlock
+                      title="Market Landscape"
+                      lines={[
+                        `Competition: ${selectedCandidate.landscape.competitionLevel}`,
+                        `Wedge: ${selectedCandidate.landscape.beachheadWedge}`,
+                        ...selectedCandidate.landscape.whitespace,
+                      ]}
+                    />
+                    <DataBlock
+                      title="Business Model"
+                      lines={[
+                        selectedCandidate.businessModel.pricingModel,
+                        `Price anchor: ${selectedCandidate.businessModel.priceAnchor}`,
+                        `Time to first dollar: ${selectedCandidate.businessModel.timeToFirstDollar}`,
+                        `Gross margin profile: ${selectedCandidate.businessModel.expectedGrossMargin}`,
+                      ]}
+                    />
+                    <DataBlock
+                      title="Go-To-Market"
+                      lines={[
+                        selectedCandidate.goToMarket.offerHook,
+                        selectedCandidate.goToMarket.salesMotion,
+                        selectedCandidate.goToMarket.retentionLoop,
+                        ...selectedCandidate.goToMarket.channels,
+                      ]}
+                    />
+                    <DataBlock
+                      title="Execution Blueprint"
+                      lines={[
+                        `Complexity: ${selectedCandidate.execution.buildComplexity}`,
+                        selectedCandidate.execution.stackRecommendation,
+                        ...selectedCandidate.execution.mvpScope,
+                        ...selectedCandidate.execution.automationLevers,
+                        ...selectedCandidate.execution.moatLevers,
+                      ]}
+                    />
+                    <DataBlock
+                      title="Outcome Ranking"
+                      lines={[
+                        `Time to first dollar: ${selectedCandidate.outcomes.timeToFirstDollarDays} days`,
+                        `GTM difficulty: ${selectedCandidate.outcomes.gtmDifficulty}/10`,
+                        `Integration complexity: ${selectedCandidate.outcomes.integrationComplexity}/10`,
+                        `Outcome score: ${selectedCandidate.outcomes.weightedScore}/100`,
+                      ]}
+                    />
+                    <DataBlock
+                      title="Competitor Snapshot"
+                      lines={selectedCandidate.competitors.map(
+                        (item) =>
+                          `${item.name} (${item.confidence}): ${item.pricingSummary} | friction: ${item.onboardingFriction} | sentiment: ${item.reviewSentiment}`,
+                      )}
+                    />
+                    <DataBlock
+                      title="Persona Variants"
+                      lines={selectedCandidate.personaVariants.map(
+                        (persona) =>
+                          `${persona.persona}: ${persona.offerVariant} (${persona.pricingAngle}) via ${persona.bestChannel}`,
+                      )}
+                    />
                   </div>
 
+                  <div className="nv-claim-grid">
+                    <ClaimBlock title="Spending Claims" claims={selectedCandidate.checks.spending.claims} />
+                    <ClaimBlock title="Pain Claims" claims={selectedCandidate.checks.pain.claims} />
+                    <ClaimBlock title="Room Claims" claims={selectedCandidate.checks.room.claims} />
+                  </div>
+
+                  {selectedTrendNews.length ? (
+                    <section className="nv-news-block">
+                      <h4>Latest Trend/News</h4>
+                      <ul>
+                        {selectedTrendNews.map((item) => (
+                          <li key={`${item.url}-${item.title}`}>
+                            <a href={item.url} target="_blank" rel="noreferrer">
+                              {item.title}
+                            </a>
+                            <span>
+                              {item.date ? `${item.date} • ` : ""}
+                              {item.confidence} confidence
+                            </span>
+                            <p>{item.summary || item.whyItMatters}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
+                  {selectedCandidate.demand.searchKeywords.length ? (
+                    <div className="nv-tags">
+                      {selectedCandidate.demand.searchKeywords.map((keyword) => (
+                        <span key={keyword}>{keyword}</span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {selectedCandidate.validationPlan.length ? (
+                    <section className="nv-validation-plan">
+                      <h4>Validation Experiments</h4>
+                      <ul>
+                        {selectedCandidate.validationPlan.map((step, index) => (
+                          <li key={`${step.experiment}-${index}`}>
+                            <strong>{step.experiment}</strong>
+                            <span>{step.successMetric}</span>
+                            <em>{step.effort} effort</em>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
+                  {selectedCandidate.risks.length ? (
+                    <section className="nv-risk-block">
+                      <h4>Key Risks</h4>
+                      <ul>
+                        {selectedCandidate.risks.map((risk) => (
+                          <li key={risk}>{risk}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
+                  {selectedCandidate.killCriteria.length ? (
+                    <section className="nv-risk-block">
+                      <h4>Kill Criteria</h4>
+                      <ul>
+                        {selectedCandidate.killCriteria.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
                   <div className="nv-source-list">
-                    {selectedCandidate.sources.slice(0, 8).map((source) => (
+                    {selectedCandidate.sources.slice(0, 12).map((source) => (
                       <a key={`${source.url}-${source.title}`} href={source.url} target="_blank" rel="noreferrer">
                         <span>{source.type}</span>
                         {source.title}
@@ -685,19 +1529,241 @@ function extractResearchReport(value: unknown): NicheResearchResponse | null {
     return null;
   }
 
-  return typed as NicheResearchResponse;
+  const safeQueries = Array.isArray(typed.queries)
+    ? typed.queries.filter((item): item is string => typeof item === "string")
+    : typeof typed.query === "string" && typed.query
+      ? [typed.query]
+      : [];
+
+  const runs = Array.isArray(typed.runs)
+    ? typed.runs
+    : [
+        {
+          niche: typed.query || "imported",
+          status: "completed" as const,
+          candidateCount: typed.candidates.length,
+          elapsedMs: typed.stats.elapsedMs,
+        },
+      ];
+
+  return {
+    ...(typed as NicheResearchResponse),
+    query: typeof typed.query === "string" ? typed.query : safeQueries.join(", "),
+    queries: safeQueries,
+    candidates: typed.candidates.map((entry, index) =>
+      normalizeImportedCandidate(entry as NicheResearchResponse["candidates"][number], index),
+    ),
+    runs,
+    stats: {
+      ...typed.stats,
+      runsCompleted:
+        typeof typed.stats.runsCompleted === "number" ? typed.stats.runsCompleted : runs.filter((run) => run.status === "completed").length,
+      runsTotal: typeof typed.stats.runsTotal === "number" ? typed.stats.runsTotal : runs.length,
+    },
+  };
+}
+
+function extractRecoverySnapshot(value: unknown): ImportedRecoverySnapshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const envelope = value as RecoveryArtifactEnvelope;
+  if (envelope.kind !== "recovery-artifact") {
+    return null;
+  }
+
+  const checkpoint = envelope.checkpoint;
+  if (!checkpoint || typeof checkpoint !== "object") {
+    return null;
+  }
+
+  const typed = checkpoint as Partial<ImportedRecoveryCheckpoint>;
+  const checkpointKey = typeof envelope.checkpointKey === "string" ? envelope.checkpointKey.trim() : "";
+  if (
+    !checkpointKey ||
+    typed.version !== 1 ||
+    typeof typed.niche !== "string" ||
+    (typed.mode !== "quick" && typed.mode !== "default" && typed.mode !== "deep") ||
+    typeof typed.startedAt !== "number" ||
+    typeof typed.totalSteps !== "number" ||
+    typeof typed.completedSteps !== "number" ||
+    !Array.isArray(typed.queries) ||
+    !typed.usageTotals ||
+    !typed.allRaw
+  ) {
+    return null;
+  }
+
+  const recoveryMessages = Array.isArray(envelope.recoveryMessages)
+    ? envelope.recoveryMessages
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  return {
+    checkpointKey,
+    checkpoint: typed as ImportedRecoveryCheckpoint,
+    recoveryMessages,
+  };
+}
+
+function parseCommaNiches(value: string) {
+  return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+}
+
+function estimateBudget(nicheCount: number, depth: NicheResearchDepth): BudgetEstimate {
+  const perNiche = depth === "quick"
+    ? { tokens: 360000, costUsd: 4.1 }
+    : depth === "deep"
+      ? { tokens: 1200000, costUsd: 13.6 }
+      : { tokens: 760000, costUsd: 8.7 };
+
+  const tokens = Math.round(perNiche.tokens * nicheCount);
+  const costUsd = perNiche.costUsd * nicheCount;
+  const lowMultiplier = 0.75;
+  const highMultiplier = 1.45;
+
+  return {
+    niches: nicheCount,
+    tokens,
+    tokensLow: Math.round(tokens * lowMultiplier),
+    tokensHigh: Math.round(tokens * highMultiplier),
+    costUsd,
+    costLowUsd: costUsd * lowMultiplier,
+    costHighUsd: costUsd * highMultiplier,
+  };
+}
+
+function estimateStepsForNiche(niche: string, depth: NicheResearchDepth) {
+  const hasNiche = Boolean(niche.trim());
+  if (hasNiche) {
+    if (depth === "quick") {
+      return 11;
+    }
+    if (depth === "deep") {
+      return 19;
+    }
+    return 17;
+  }
+
+  if (depth === "quick") {
+    return 7;
+  }
+  if (depth === "deep") {
+    return 10;
+  }
+  return 8;
+}
+
+function createRunState(niche: string, depth: NicheResearchDepth, index: number, batchId: string): NicheRunState {
+  const cleaned = niche.trim();
+  const display = cleaned || "auto-discovery";
+  return {
+    id: `${toSlug(display)}-${batchId}-${index + 1}`,
+    niche: display,
+    query: cleaned,
+    status: "queued",
+    progress: null,
+    report: null,
+    error: null,
+    estimatedTotalSteps: estimateStepsForNiche(cleaned, depth),
+  };
+}
+
+function combineReportsFromRuns(
+  completedReports: NicheResearchResponse[],
+  runStates: NicheRunState[],
+  depth: NicheResearchDepth,
+): NicheResearchResponse {
+  const allCandidates: NicheResearchResponse["candidates"] = [];
+  const seen = new Set<string>();
+
+  for (const report of completedReports) {
+    for (const candidate of report.candidates) {
+      const key = `${candidate.requestedNiche ?? report.query}|${candidate.name.toLowerCase().trim()}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      allCandidates.push({
+        ...candidate,
+        id: `${candidate.id}-${toSlug(candidate.requestedNiche || report.query || "candidate")}-${allCandidates.length + 1}`,
+      });
+    }
+  }
+
+  const usage = completedReports.reduce<TokenUsageSummary>(
+    (acc, report) => ({
+      inputTokens: acc.inputTokens + report.usage.inputTokens,
+      outputTokens: acc.outputTokens + report.usage.outputTokens,
+      totalTokens: acc.totalTokens + report.usage.totalTokens,
+      costUsd: acc.costUsd + report.usage.costUsd,
+      calls: acc.calls + report.usage.calls,
+      model: acc.model ?? report.usage.model,
+    }),
+    {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      calls: 0,
+    },
+  );
+
+  const runs: NicheResearchResponse["runs"] = runStates.map((run) => {
+    if (run.status === "completed" && run.report) {
+      return {
+        niche: run.niche,
+        status: "completed" as const,
+        candidateCount: run.report.candidates.length,
+        elapsedMs: run.report.stats.elapsedMs,
+        trendNews: run.report.runs[0]?.trendNews ?? [],
+      };
+    }
+
+    return {
+      niche: run.niche,
+      status: "failed" as const,
+      candidateCount: 0,
+      elapsedMs: run.progress?.elapsedMs ?? 0,
+      error: run.error || (run.status === "paused" ? "Paused by user" : "Stopped before completion"),
+    };
+  });
+
+  const queries = runStates.map((run) => run.query).filter(Boolean);
+  const range = completedReports[0]?.range ?? { from: "", to: "" };
+
+  return {
+    query: queries.join(", "),
+    queries,
+    discoveryMode: runStates.length === 1 && !queries.length,
+    mode: depth,
+    range,
+    generatedAt: new Date().toISOString(),
+    candidates: allCandidates,
+    runs,
+    stats: {
+      total: allCandidates.length,
+      passed: allCandidates.length,
+      elapsedMs: Math.max(0, ...runStates.map((run) => run.progress?.elapsedMs ?? 0)),
+      runsCompleted: runs.filter((run) => run.status === "completed").length,
+      runsTotal: runs.length,
+    },
+    usage,
+  };
 }
 
 function depthHint(depth: NicheResearchDepth) {
   if (depth === "quick") {
-    return "~8 min runtime";
+    return "Fastest";
   }
 
   if (depth === "deep") {
-    return "~11 min runtime";
+    return "Most complete";
   }
 
-  return "~10 min runtime";
+  return "Balanced";
 }
 
 function formatNumber(value: number) {
@@ -711,6 +1777,105 @@ function formatDuration(ms: number) {
     .padStart(2, "0");
   const seconds = (totalSeconds % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function statusLabel(state: NicheRunStatus) {
+  if (state === "completed") {
+    return "done";
+  }
+
+  if (state === "failed") {
+    return "failed";
+  }
+
+  if (state === "paused") {
+    return "paused";
+  }
+
+  if (state === "stopped") {
+    return "stopped";
+  }
+
+  if (state === "running") {
+    return "running";
+  }
+
+  return "queued";
+}
+
+function getRunFailureReason(run: NicheRunState) {
+  if (run.error?.trim()) {
+    return run.error.trim();
+  }
+
+  if (run.progress?.message?.trim()) {
+    return run.progress.message.trim();
+  }
+
+  if (run.status === "stopped") {
+    return "Stopped by user.";
+  }
+
+  return "No failure reason was returned.";
+}
+
+function toFailedRunState(run: NicheRunState, error: string): NicheRunState {
+  const message = error.trim() || "Niche validation failed.";
+  return {
+    ...run,
+    status: "failed",
+    error: message,
+    progress: {
+      stage: "complete",
+      message,
+      elapsedMs: run.progress?.elapsedMs ?? 0,
+      etaMs: 0,
+      completedSteps: run.progress?.completedSteps ?? 0,
+      totalSteps: run.progress?.totalSteps ?? run.estimatedTotalSteps,
+    },
+  };
+}
+
+function failureSuggestions(error: string | null, niche: string) {
+  const source = (error || "").toLowerCase();
+
+  if (source.includes("timed out")) {
+    return [
+      "Try `Quick` depth first, then rerun this niche in `Default`.",
+      `Narrow the niche from "${niche}" to a specific workflow or audience.`,
+      "Run this niche alone to reduce parallel load and timeout risk.",
+    ];
+  }
+
+  if (source.includes("aborted")) {
+    return [
+      "Retry this niche once; this is usually a transient timeout/transport issue.",
+      "Use `Quick` depth first, then rerun winners in `Default` or `Deep`.",
+      "If repeated, run fewer niches in parallel to reduce provider pressure.",
+    ];
+  }
+
+  if (source.includes("api key") || source.includes("openrouter")) {
+    return [
+      "Verify OpenRouter keys/models in `.env`.",
+      "Retry after a minute if provider capacity is temporarily constrained.",
+      "Switch to a lighter depth to reduce token demand.",
+    ];
+  }
+
+  if (source.includes("rate")) {
+    return [
+      "Retry with fewer niches in parallel.",
+      "Use `Quick` depth for the first pass, then deepen winners.",
+      "Rerun after short cooldown to avoid provider throttling.",
+    ];
+  }
+
+  return [
+    `Make "${niche}" more specific (audience + job-to-be-done + tool context).`,
+    "Retry once in `Quick` depth to validate retrieval quality.",
+    "If still failing, run this niche by itself and compare errors.",
+  ];
 }
 
 function toSlug(value: string) {
@@ -736,19 +1901,117 @@ function CheckPill({ label, pass }: { label: string; pass: boolean }) {
   return <span className={`nv-check-pill ${pass ? "is-pass" : "is-fail"}`}>{label}</span>;
 }
 
-function CheckBlock({ title, lines }: { title: string; lines: string[] }) {
+function DataBlock({ title, lines }: { title: string; lines: string[] }) {
+  const compact = lines.map((line) => line.trim()).filter(Boolean).slice(0, 8);
+
   return (
     <section className="nv-check-block">
       <h4>{title}</h4>
-      {lines.length ? (
+      {compact.length ? (
         <ul>
-          {lines.map((line, index) => (
+          {compact.map((line, index) => (
             <li key={`${title}-${index}`}>{line}</li>
           ))}
         </ul>
       ) : (
-        <p>No evidence captured.</p>
+        <p>No signal captured.</p>
       )}
     </section>
   );
+}
+
+function ClaimBlock({
+  title,
+  claims,
+}: {
+  title: string;
+  claims: Array<{ claim: string; confidence: "high" | "med" | "low"; sourceUrl?: string }>;
+}) {
+  return (
+    <section className="nv-check-block">
+      <h4>{title}</h4>
+      {claims.length ? (
+        <ul className="nv-claim-list">
+          {claims.map((item, index) => (
+            <li key={`${title}-${index}`}>
+              <span className={`nv-confidence confidence-${item.confidence}`}>{item.confidence}</span>
+              {item.claim}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No confidence-scored claims yet.</p>
+      )}
+    </section>
+  );
+}
+
+function normalizeImportedCandidate(candidate: NicheResearchResponse["candidates"][number], index: number) {
+  return {
+    ...candidate,
+    id: candidate.id || `candidate-${index + 1}`,
+    problemStatement:
+      candidate.problemStatement || candidate.oneLiner || candidate.aiBuildAngle || "Recurring workflow pain with paid demand.",
+    icp: candidate.icp || candidate.audience || "Operators with recurring pain",
+    demand: {
+      trendSummary: candidate.demand?.trendSummary || "Demand signal exists and should be validated in customer calls.",
+      urgencyDrivers: candidate.demand?.urgencyDrivers || [],
+      buyingSignals: candidate.demand?.buyingSignals || [],
+      searchKeywords: candidate.demand?.searchKeywords || [],
+    },
+    landscape: {
+      competitionLevel: candidate.landscape?.competitionLevel || "medium",
+      incumbentTypes: candidate.landscape?.incumbentTypes || [],
+      whitespace: candidate.landscape?.whitespace || [],
+      beachheadWedge: candidate.landscape?.beachheadWedge || "Faster setup and measurable ROI",
+    },
+    businessModel: {
+      pricingModel: candidate.businessModel?.pricingModel || "SaaS subscription",
+      priceAnchor: candidate.businessModel?.priceAnchor || "$49-$299/mo",
+      timeToFirstDollar: candidate.businessModel?.timeToFirstDollar || "2-6 weeks",
+      expectedGrossMargin: candidate.businessModel?.expectedGrossMargin || "70%+",
+    },
+    goToMarket: {
+      channels: candidate.goToMarket?.channels || [],
+      offerHook: candidate.goToMarket?.offerHook || "Automate painful recurring work quickly",
+      salesMotion: candidate.goToMarket?.salesMotion || "Founder-led outbound and community GTM",
+      retentionLoop: candidate.goToMarket?.retentionLoop || "ROI and outcomes reporting",
+    },
+    execution: {
+      buildComplexity: candidate.execution?.buildComplexity || "medium",
+      stackRecommendation: candidate.execution?.stackRecommendation || "Next.js + workflow automation + LLM APIs",
+      mvpScope: candidate.execution?.mvpScope || [],
+      automationLevers: candidate.execution?.automationLevers || [],
+      moatLevers: candidate.execution?.moatLevers || [],
+    },
+    outcomes: {
+      timeToFirstDollarDays: candidate.outcomes?.timeToFirstDollarDays ?? 60,
+      gtmDifficulty: candidate.outcomes?.gtmDifficulty ?? 5,
+      integrationComplexity: candidate.outcomes?.integrationComplexity ?? 5,
+      weightedScore: candidate.outcomes?.weightedScore ?? 50,
+    },
+    competitors: (candidate.competitors || []).map((entry) => ({
+      ...entry,
+      confidence: entry.confidence || "med",
+    })),
+    personaVariants: candidate.personaVariants || [],
+    validationPlan: candidate.validationPlan || [],
+    risks: candidate.risks || [],
+    killCriteria: candidate.killCriteria || [],
+    checks: {
+      ...candidate.checks,
+      spending: {
+        ...candidate.checks.spending,
+        claims: candidate.checks.spending?.claims || [],
+      },
+      pain: {
+        ...candidate.checks.pain,
+        claims: candidate.checks.pain?.claims || [],
+      },
+      room: {
+        ...candidate.checks.room,
+        claims: candidate.checks.room?.claims || [],
+      },
+    },
+  };
 }

@@ -1,5 +1,5 @@
 import { recencyScore } from "@/lib/server/date";
-import { DateConfidence, RedditItem, WebItem, XItem } from "@/lib/types";
+import { DateConfidence, RedditItem, WebItem, XItem, YouTubeItem } from "@/lib/types";
 
 const WEIGHT_RELEVANCE = 0.45;
 const WEIGHT_RECENCY = 0.25;
@@ -14,7 +14,7 @@ const WEB_NO_DATE_PENALTY = 20;
 const DEFAULT_ENGAGEMENT = 35;
 const UNKNOWN_ENGAGEMENT_PENALTY = 3;
 
-type ItemWithEngagement = RedditItem | XItem;
+type ItemWithEngagement = RedditItem | XItem | YouTubeItem;
 
 function log1pSafe(value: number | null | undefined): number {
   if (value === null || value === undefined || value < 0) {
@@ -89,6 +89,26 @@ export function scoreX(items: XItem[]): XItem[] {
     const replies = log1pSafe(item.engagement.replies);
     const quotes = log1pSafe(item.engagement.quotes);
     return 0.55 * likes + 0.25 * reposts + 0.15 * replies + 0.05 * quotes;
+  });
+
+  const normalizedEngagement = normalizeTo100(rawEngagement);
+
+  return items.map((item, index) => scoreEngagedItem(item, normalizedEngagement[index], rawEngagement[index]));
+}
+
+export function scoreYouTube(items: YouTubeItem[]): YouTubeItem[] {
+  if (!items.length) {
+    return items;
+  }
+
+  const rawEngagement = items.map((item) => {
+    if (!item.engagement) {
+      return null;
+    }
+    const views = log1pSafe(item.engagement.views);
+    const likes = log1pSafe(item.engagement.likes);
+    const comments = log1pSafe(item.engagement.num_comments);
+    return 0.55 * views + 0.3 * likes + 0.15 * comments;
   });
 
   const normalizedEngagement = normalizeTo100(rawEngagement);

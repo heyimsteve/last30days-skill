@@ -3,7 +3,8 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 interface RequestOptions {
   path: string;
   payload: Record<string, unknown>;
-  timeoutMs?: number;
+  timeoutMs?: number | null;
+  signal?: AbortSignal;
 }
 
 export interface OpenRouterUsage {
@@ -21,9 +22,26 @@ function getApiKey() {
   return apiKey;
 }
 
-export async function openRouterRequest<T>({ path, payload, timeoutMs = 120000 }: RequestOptions): Promise<T> {
+export async function openRouterRequest<T>({ path, payload, timeoutMs = 120000, signal }: RequestOptions): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const hasTimeout = typeof timeoutMs === "number" && timeoutMs > 0;
+  const effectiveTimeoutMs = hasTimeout ? timeoutMs : 0;
+  let timedOut = false;
+  const timer = hasTimeout
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, effectiveTimeoutMs)
+    : null;
+  const onAbort = () => controller.abort();
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
 
   try {
     let response: Response;
@@ -45,20 +63,66 @@ export async function openRouterRequest<T>({ path, payload, timeoutMs = 120000 }
         (error instanceof DOMException && error.name === "AbortError") ||
         (error instanceof Error && error.name === "AbortError")
       ) {
-        throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+        if (signal?.aborted && !timedOut) {
+          const abortError = new Error("Request aborted");
+          abortError.name = "AbortError";
+          throw abortError;
+        }
+
+        if (!timedOut && !hasTimeout) {
+          const abortError = new Error("Request aborted");
+          abortError.name = "AbortError";
+          throw abortError;
+        }
+
+        throw new Error(`Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s`);
       }
       throw error;
     }
 
-    const data = await response.json();
+    let data: Record<string, unknown>;
+    try {
+      data = (await response.json()) as Record<string, unknown>;
+    } catch (error) {
+      if (
+        (error instanceof DOMException && error.name === "AbortError") ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        if (signal?.aborted && !timedOut) {
+          const abortError = new Error("Request aborted");
+          abortError.name = "AbortError";
+          throw abortError;
+        }
+
+        if (!timedOut && !hasTimeout) {
+          const abortError = new Error("Request aborted");
+          abortError.name = "AbortError";
+          throw abortError;
+        }
+
+        throw new Error(`Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s`);
+      }
+      throw error;
+    }
+
     if (!response.ok) {
-      const message = data?.error?.message ?? `OpenRouter error (${response.status})`;
+      const errorPayload =
+        data.error && typeof data.error === "object"
+          ? (data.error as { message?: unknown })
+          : null;
+      const message =
+        typeof errorPayload?.message === "string"
+          ? errorPayload.message
+          : `OpenRouter error (${response.status})`;
       throw new Error(message);
     }
 
     return data as T;
   } finally {
-    clearTimeout(timer);
+    if (timer) {
+      clearTimeout(timer);
+    }
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 

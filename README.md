@@ -22,23 +22,38 @@ Niche Validator Studio helps you find buildable AI product opportunities and mov
 
 - Streaming research progress with ETA + elapsed time
 - Plan generation progress (for PRD + Execution Plan) with ETA + elapsed time
+- Discovery acceleration:
+  - batched query concurrency by depth (`quick`: 2, `default`: 3, `deep`: 4)
+  - adaptive early-stop when evidence saturation is reached
+- Failure recovery:
+  - trend/news lookup is non-fatal (run completes without trend/news when needed)
+  - partial recovery path returns best-effort results from collected signals instead of dropping the whole run
+  - auto-saved recovery artifacts for degraded runs under `output/recovery/`
+  - importing a recovery artifact restores a resumable checkpoint in the UI
 - Research usage display:
   - total tokens
   - total cost
   - total model calls
 - Research session portability:
   - **Export Results** to JSON
-  - **Import Results** later and continue without re-running research
+  - **Import Results** for report viewing
+  - **Import Recovery Snapshot** to restore resume checkpoints from degraded runs
 
 ## Runtime Expectations
 
 Typical research runtime:
 
-- `quick`: ~8 minutes
-- `default`: ~10 minutes
-- `deep`: ~11 minutes
+- `quick`: ~12-16 minutes
+- `default`: ~20-30 minutes
+- `deep`: ~28-40 minutes
 
 Plan generation is a second stage and usually takes ~1-2 minutes per output.
+
+Notes:
+
+- Terminal output like `POST /api/research/stream 200 in 22.6min` is the full open duration of the streaming request.
+- Next.js dev logs may label this as `render`, but it primarily reflects research pipeline time, not page rendering.
+- Trend/news lookup has no client-side timeout cap; it can continue until completion or user pause/stop, with retry/fallback behavior.
 
 ## Stack
 
@@ -113,6 +128,20 @@ Event types:
 - `stats` (candidate count, runtime)
 - `usage` (tokens/cost/calls)
 - validated candidates
+
+---
+
+### `POST /api/research/recovery/import`
+Import a saved recovery checkpoint so the UI can resume from snapshot state.
+
+Request:
+
+```json
+{
+  "resumeKey": "checkpoint-key",
+  "checkpoint": { "...checkpoint payload..." }
+}
+```
 
 ---
 

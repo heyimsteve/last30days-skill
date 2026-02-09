@@ -1,4 +1,4 @@
-export type SourceType = "reddit" | "x" | "web";
+export type SourceType = "reddit" | "x" | "web" | "youtube";
 export type DateConfidence = "high" | "med" | "low";
 
 export interface Engagement {
@@ -9,6 +9,7 @@ export interface Engagement {
   reposts?: number | null;
   replies?: number | null;
   quotes?: number | null;
+  views?: number | null;
 }
 
 export interface SubScores {
@@ -49,12 +50,21 @@ export interface WebItem extends BaseItem {
   snippet: string;
 }
 
-export type SearchItem = RedditItem | XItem | WebItem;
+export interface YouTubeItem extends BaseItem {
+  source: "youtube";
+  title: string;
+  channel: string;
+  snippet: string;
+  engagement: Engagement | null;
+}
+
+export type SearchItem = RedditItem | XItem | WebItem | YouTubeItem;
 
 export interface SearchErrors {
   reddit?: string;
   x?: string;
   web?: string;
+  youtube?: string;
   synthesis?: string;
 }
 
@@ -80,6 +90,7 @@ export interface UsageReport extends UsageBreakdown {
     reddit?: UsageBreakdown;
     x?: UsageBreakdown;
     web?: UsageBreakdown;
+    youtube?: UsageBreakdown;
     synthesis?: UsageBreakdown;
   };
 }
@@ -94,6 +105,7 @@ export interface ResearchResponse {
   reddit: RedditItem[];
   x: XItem[];
   web: WebItem[];
+  youtube: YouTubeItem[];
   synthesis: SynthesisResult | null;
   errors: SearchErrors;
   stats: {
@@ -101,6 +113,7 @@ export interface ResearchResponse {
     reddit: number;
     x: number;
     web: number;
+    youtube: number;
     elapsedMs: number;
     generatedAt: string;
   };
