@@ -16,8 +16,9 @@ const bodyFont = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "last30days Next.js",
-  description: "Research the last 30 days across Reddit, X, and the Web with Claude synthesis.",
+  title: "Niche Validator Studio",
+  description:
+    "Validate niche opportunities with spending, pain, and community-room checks, then generate markdown PRDs and execution plans.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

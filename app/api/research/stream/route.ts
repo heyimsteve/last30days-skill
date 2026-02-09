@@ -1,15 +1,20 @@
-import { ResearchDepth, runResearch } from "@/lib/server/research";
-import { SourceType } from "@/lib/types";
+import { NicheResearchDepth, NicheResearchResponse } from "@/lib/niche-types";
+import { runNicheResearch } from "@/lib/server/niche-research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 600;
 
 interface ResearchRequestBody {
-  topic?: unknown;
-  days?: unknown;
+  niche?: unknown;
   depth?: unknown;
-  sources?: unknown;
+}
+
+interface StreamPayload {
+  type: "ready" | "progress" | "result" | "error";
+  progress?: unknown;
+  report?: NicheResearchResponse;
+  error?: string;
 }
 
 export async function POST(request: Request) {
@@ -24,29 +29,18 @@ export async function POST(request: Request) {
     });
   }
 
-  const topic = typeof body.topic === "string" ? body.topic.trim() : "";
-  const days = Number.isFinite(body.days) ? Number(body.days) : 30;
+  const niche = typeof body.niche === "string" ? body.niche.trim() : "";
   const depth = isDepth(body.depth) ? body.depth : "default";
-  const sources = parseSources(body.sources);
 
-  if (!topic) {
-    return jsonError("Topic is required.", 400);
-  }
-  if (topic.length < 2) {
-    return jsonError("Topic must be at least 2 characters.", 400);
-  }
-  if (!Number.isInteger(days) || days < 1 || days > 30) {
-    return jsonError("Days must be an integer between 1 and 30.", 400);
-  }
-  if (!sources.length) {
-    return jsonError("Select at least one source.", 400);
+  if (niche.length > 160) {
+    return jsonError("Niche must be 160 characters or fewer.", 400);
   }
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (payload: Record<string, unknown>) => {
+      const send = (payload: StreamPayload) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 
@@ -54,8 +48,8 @@ export async function POST(request: Request) {
         try {
           send({ type: "ready" });
 
-          const report = await runResearch(
-            { topic, days, depth, sources },
+          const report = await runNicheResearch(
+            { niche, mode: depth },
             {
               onProgress: (progress) => {
                 send({ type: "progress", progress });
@@ -67,7 +61,7 @@ export async function POST(request: Request) {
         } catch (error) {
           send({
             type: "error",
-            error: error instanceof Error ? error.message : "Unexpected error while running research.",
+            error: error instanceof Error ? error.message : "Unexpected error while running niche research.",
           });
         } finally {
           controller.close();
@@ -85,15 +79,7 @@ export async function POST(request: Request) {
   });
 }
 
-function parseSources(value: unknown): SourceType[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is SourceType => item === "reddit" || item === "x" || item === "web");
-}
-
-function isDepth(value: unknown): value is ResearchDepth {
+function isDepth(value: unknown): value is NicheResearchDepth {
   return value === "quick" || value === "default" || value === "deep";
 }
 

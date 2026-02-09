@@ -1,24 +1,56 @@
-# last30days Next.js
+# Niche Validator Studio
 
-A full end-to-end Next.js app that researches a topic from the last 1-30 days across **Reddit**, **X**, and/or the **Web**, then automatically synthesizes findings using a **Claude model**.
+Niche Validator Studio helps you find buildable AI product opportunities and move directly into execution docs.
 
-## What changed
+## What It Does
 
-- Migrated from CLI flow to frontend + API route architecture.
-- Added multi-choice source selection (`Reddit`, `X`, `Web`) in UI.
-- Removed interactive synth question flow; synthesis now runs automatically after search.
-- Ported core normalization, date filtering, scoring, sorting, and dedupe behavior into TypeScript server modules.
-- Upgraded UX with source chips, depth controls, examples, loading states, synthesis panel, tabs, and responsive layout.
+- Searches across **Reddit + X + Web** every run
+- Uses a fixed **rolling last 30 days** window
+- Supports optional niche input:
+  - If niche is provided: validates that market and sub-niches
+  - If niche is blank: discovers niches from broad multi-source signals
+- Validates each candidate with 3 checks:
+  1. **Spending** (>= $500/year signal)
+  2. **Pain** (recurring complaint signal, 3+)
+  3. **Room** (active launch community, under ~50k members)
+- Lets you select a validated candidate and click one **Proceed** button to generate:
+  - **PRD** and
+  - **Execution Plan**
+- Shows each output in a separate card with separate **Copy** and **Export `.md`** actions
+
+## UX Features
+
+- Streaming research progress with ETA + elapsed time
+- Plan generation progress (for PRD + Execution Plan) with ETA + elapsed time
+- Research usage display:
+  - total tokens
+  - total cost
+  - total model calls
+- Research session portability:
+  - **Export Results** to JSON
+  - **Import Results** later and continue without re-running research
+
+## Runtime Expectations
+
+Typical research runtime:
+
+- `quick`: ~8 minutes
+- `default`: ~10 minutes
+- `deep`: ~11 minutes
+
+Plan generation is a second stage and usually takes ~1-2 minutes per output.
 
 ## Stack
 
 - Next.js App Router
 - TypeScript
-- OpenRouter APIs (`/responses`, `/chat/completions`)
+- OpenRouter
+  - `/responses` for source search
+  - `/chat/completions` for candidate validation + document generation
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and set at minimum:
+Copy `.env.example` to `.env.local` and set:
 
 ```bash
 OPENROUTER_API_KEY=or-...
@@ -27,10 +59,11 @@ OPENROUTER_API_KEY=or-...
 Optional model overrides:
 
 ```bash
+OPENROUTER_NICHE_MODEL=openai/gpt-5.2:online
+OPENROUTER_PLAN_MODEL=anthropic/claude-sonnet-4.5
 OPENROUTER_REDDIT_MODEL=openai/gpt-5.2:online
 OPENROUTER_X_MODEL=x-ai/grok-4.1-fast:online
 OPENROUTER_WEB_MODEL=openai/gpt-5.2:online
-OPENROUTER_SYNTH_MODEL=anthropic/claude-sonnet-4.5
 ```
 
 ## Run
@@ -44,31 +77,71 @@ Open `http://localhost:3000`.
 
 ## API
 
-`POST /api/research`
+### `POST /api/research`
+Run niche validation (non-streaming).
 
 Request:
 
 ```json
 {
-  "topic": "latest Claude Code workflows",
-  "days": 30,
-  "depth": "default",
-  "sources": ["reddit", "x", "web"]
+  "niche": "insurance",
+  "depth": "default"
 }
 ```
 
-Response includes per-source results, synthesis, stats, and partial source errors.
+Notes:
 
-`POST /api/research/stream`
+- `niche` is optional
+- `depth`: `quick | default | deep`
+- Always uses last-30-days window
 
-- SSE stream for real progress updates:
-  - source search start/completion/failure
-  - processing stage
-  - synthesis stage
-  - elapsed timer + ETA
-- Final event includes the same report payload as `/api/research`, plus token/cost usage totals and per-operation usage.
+---
 
-## Notes
+### `POST /api/research/stream`
+Run niche validation with SSE progress updates.
 
-- Existing Python CLI sources are still in `scripts/` for reference.
-- The Next.js app is now the primary end-to-end experience.
+Event types:
+
+- `ready`
+- `progress`
+- `result`
+- `error`
+
+`result.report` includes:
+
+- `range` (`from`, `to`)
+- `stats` (candidate count, runtime)
+- `usage` (tokens/cost/calls)
+- validated candidates
+
+---
+
+### `POST /api/research/plan`
+Generate one markdown output for a selected validated candidate.
+
+Request:
+
+```json
+{
+  "candidate": { "id": "...", "name": "...", "checks": {} },
+  "type": "prd"
+}
+```
+
+- `type`: `prd | plan`
+- The UI calls this twice (first `prd`, then `plan`) when user clicks Proceed.
+
+## Research Export Format
+
+Exported research files are JSON with this envelope:
+
+```json
+{
+  "app": "niche-validator-studio",
+  "version": 1,
+  "exportedAt": "ISO_DATE",
+  "report": { "...full research report..." }
+}
+```
+
+You can import this file later to continue from prior results.

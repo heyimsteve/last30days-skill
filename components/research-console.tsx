@@ -1,59 +1,77 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { ResearchResponse, SearchItem, SourceType } from "@/lib/types";
+import { NichePlanResponse, NicheResearchDepth, NicheResearchProgressEvent, NicheResearchResponse, PlanOutputType } from "@/lib/niche-types";
 
-const SOURCE_OPTIONS: Array<{ id: SourceType; label: string; hint: string }> = [
-  { id: "reddit", label: "Reddit", hint: "community discussion" },
-  { id: "x", label: "X", hint: "real-time social signal" },
-  { id: "web", label: "Web", hint: "docs, blogs, news" },
+const EXAMPLE_NICHES = [
+  "Dental insurance claim denials",
+  "Shopify refund abuse detection",
+  "Home services quote follow-up",
+  "YouTube creator sponsorship ops",
 ];
 
-const EXAMPLE_TOPICS = [
-  "Higgsfield Vibe Motion prompting",
-  "Best Claude Code workflow upgrades",
-  "Latest OpenAI Responses API patterns",
-  "MCP server tooling for AI agents",
-];
-
-type Depth = "quick" | "default" | "deep";
-type SourceStatus = "pending" | "running" | "completed" | "failed";
-
-interface ProgressEvent {
-  stage: "starting" | "searching" | "processing" | "synthesizing" | "complete";
-  message: string;
-  elapsedMs: number;
-  etaMs: number;
-  completedSteps: number;
-  totalSteps: number;
-  sourceStatus: Partial<Record<SourceType, SourceStatus>>;
-}
+const PLAN_SEQUENCE: PlanOutputType[] = ["prd", "plan"];
+const ESTIMATED_PRD_MS = 105000;
+const ESTIMATED_PLAN_MS = 105000;
 
 interface StreamPayload {
   type: "ready" | "progress" | "result" | "error";
-  progress?: ProgressEvent;
-  report?: ResearchResponse;
+  progress?: NicheResearchProgressEvent;
+  report?: NicheResearchResponse;
   error?: string;
 }
 
-export function ResearchConsole() {
-  const [topic, setTopic] = useState("");
-  const [days, setDays] = useState(30);
-  const [depth, setDepth] = useState<Depth>("default");
-  const [sources, setSources] = useState<SourceType[]>(["reddit", "x", "web"]);
+interface PlanGenerationState {
+  stage: "idle" | "running" | "complete" | "error";
+  message: string;
+  completed: number;
+  total: number;
+  startedAt: number | null;
+  etaTargetAt: number | null;
+}
 
-  const [report, setReport] = useState<ResearchResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<SourceType>("reddit");
+interface ExportEnvelope {
+  app: "niche-validator-studio";
+  version: 1;
+  exportedAt: string;
+  report: NicheResearchResponse;
+}
+
+const EMPTY_PLAN_STATE: PlanGenerationState = {
+  stage: "idle",
+  message: "",
+  completed: 0,
+  total: PLAN_SEQUENCE.length,
+  startedAt: null,
+  etaTargetAt: null,
+};
+
+export function ResearchConsole() {
+  const [niche, setNiche] = useState("");
+  const [depth, setDepth] = useState<NicheResearchDepth>("default");
+
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<ProgressEvent | null>(null);
+  const [progress, setProgress] = useState<NicheResearchProgressEvent | null>(null);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
   const [etaTargetAt, setEtaTargetAt] = useState<number | null>(null);
   const [clockNow, setClockNow] = useState(Date.now());
+
+  const [report, setReport] = useState<NicheResearchResponse | null>(null);
+  const [selectedId, setSelectedId] = useState<string>("");
+
+  const [planning, setPlanning] = useState(false);
+  const [planResults, setPlanResults] = useState<Partial<Record<PlanOutputType, NichePlanResponse>>>({});
+  const [planState, setPlanState] = useState<PlanGenerationState>(EMPTY_PLAN_STATE);
+
   const [error, setError] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [importNote, setImportNote] = useState<string | null>(null);
+
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && !planning) {
       return;
     }
 
@@ -62,57 +80,54 @@ export function ResearchConsole() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [loading]);
+  }, [loading, planning]);
 
-  const activeItems = useMemo(() => {
+  const visibleCandidates = useMemo(() => {
     if (!report) {
       return [];
     }
 
-    if (activeTab === "reddit") {
-      return report.reddit;
-    }
-    if (activeTab === "x") {
-      return report.x;
-    }
-    return report.web;
-  }, [activeTab, report]);
-
-  const errors = useMemo(() => {
-    if (!report) {
-      return [];
-    }
-
-    return Object.entries(report.errors)
-      .filter(([, value]) => Boolean(value))
-      .map(([key, value]) => ({ key, value: value as string }));
+    return report.candidates;
   }, [report]);
+
+  const selectedCandidate = useMemo(() => {
+    if (!visibleCandidates.length) {
+      return null;
+    }
+
+    return visibleCandidates.find((candidate) => candidate.id === selectedId) ?? visibleCandidates[0];
+  }, [selectedId, visibleCandidates]);
+
+  useEffect(() => {
+    if (!visibleCandidates.length) {
+      setSelectedId("");
+      return;
+    }
+
+    if (!selectedId || !visibleCandidates.some((candidate) => candidate.id === selectedId)) {
+      setSelectedId(visibleCandidates[0].id);
+    }
+  }, [selectedId, visibleCandidates]);
 
   const elapsedMs = runStartedAt ? Math.max(0, clockNow - runStartedAt) : 0;
   const remainingMs = etaTargetAt ? Math.max(0, etaTargetAt - clockNow) : 0;
+  const progressPercent = progress ? Math.round((progress.completedSteps / progress.totalSteps) * 100) : 0;
 
-  const progressPercent = useMemo(() => {
-    if (!progress || progress.totalSteps <= 0) {
-      return 0;
-    }
-    return Math.max(0, Math.min(100, Math.round((progress.completedSteps / progress.totalSteps) * 100)));
-  }, [progress]);
+  const planElapsedMs = planState.startedAt ? Math.max(0, clockNow - planState.startedAt) : 0;
+  const planRemainingMs = planState.etaTargetAt ? Math.max(0, planState.etaTargetAt - clockNow) : 0;
+  const planProgressPercent = planState.total
+    ? Math.round((planState.completed / planState.total) * 100)
+    : 0;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!topic.trim()) {
-      setError("Enter a topic to research.");
-      return;
-    }
-
-    if (!sources.length) {
-      setError("Choose at least one source.");
-      return;
-    }
-
     setLoading(true);
     setError(null);
+    setPlanError(null);
+    setImportNote(null);
+    setPlanResults({});
+    setPlanState(EMPTY_PLAN_STATE);
     setReport(null);
     setProgress(null);
     setRunStartedAt(Date.now());
@@ -126,10 +141,8 @@ export function ResearchConsole() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          topic: topic.trim(),
-          days,
+          niche: niche.trim(),
           depth,
-          sources,
         }),
       });
 
@@ -137,16 +150,16 @@ export function ResearchConsole() {
       if (!response.ok) {
         if (contentType.includes("application/json")) {
           const payload = (await response.json()) as { error?: string };
-          setError(payload.error ?? "Research request failed.");
+          setError(payload.error ?? "Niche validation request failed.");
         } else {
-          setError("Research request failed.");
+          setError("Niche validation request failed.");
         }
         return;
       }
 
       const body = response.body;
       if (!body) {
-        setError("No stream received from research endpoint.");
+        setError("No stream received from niche validator endpoint.");
         return;
       }
 
@@ -199,30 +212,20 @@ export function ResearchConsole() {
           }
 
           if (payload.type === "result" && payload.report) {
-            const nextReport = payload.report;
             gotResult = true;
-            setReport(nextReport);
-
-            if (nextReport.stats.reddit > 0) {
-              setActiveTab("reddit");
-            } else if (nextReport.stats.x > 0) {
-              setActiveTab("x");
-            } else {
-              setActiveTab("web");
-            }
-
+            setReport(payload.report);
             continue;
           }
 
           if (payload.type === "error") {
             gotError = true;
-            setError(payload.error ?? "Research failed.");
+            setError(payload.error ?? "Niche validation failed.");
           }
         }
       }
 
       if (!gotResult && !gotError) {
-        setError("Research stream ended before a final result was returned.");
+        setError("Validation stream ended before a final result was returned.");
       }
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unexpected request failure.";
@@ -233,290 +236,468 @@ export function ResearchConsole() {
     }
   }
 
-  function toggleSource(source: SourceType) {
-    setSources((current) => {
-      if (current.includes(source)) {
-        return current.filter((item) => item !== source);
-      }
-      return [...current, source];
+  async function onGenerateOutputs() {
+    if (!selectedCandidate) {
+      setPlanError("Select a niche result first.");
+      return;
+    }
+
+    const startedAt = Date.now();
+    setPlanning(true);
+    setPlanError(null);
+    setPlanResults({});
+    setPlanState({
+      stage: "running",
+      message: "Generating PRD...",
+      completed: 0,
+      total: PLAN_SEQUENCE.length,
+      startedAt,
+      etaTargetAt: startedAt + ESTIMATED_PRD_MS + ESTIMATED_PLAN_MS,
     });
+
+    let prdResult: NichePlanResponse | null = null;
+
+    try {
+      prdResult = await requestPlan(selectedCandidate, "prd");
+      setPlanResults({ prd: prdResult });
+
+      const secondStepStart = Date.now();
+      setPlanState({
+        stage: "running",
+        message: "PRD complete. Generating Execution Plan...",
+        completed: 1,
+        total: PLAN_SEQUENCE.length,
+        startedAt,
+        etaTargetAt: secondStepStart + ESTIMATED_PLAN_MS,
+      });
+
+      const executionResult = await requestPlan(selectedCandidate, "plan");
+      setPlanResults({ prd: prdResult, plan: executionResult });
+      setPlanState({
+        stage: "complete",
+        message: "PRD and Execution Plan are ready.",
+        completed: PLAN_SEQUENCE.length,
+        total: PLAN_SEQUENCE.length,
+        startedAt,
+        etaTargetAt: null,
+      });
+    } catch (requestError) {
+      setPlanError(requestError instanceof Error ? requestError.message : "Unexpected planning failure.");
+      setPlanState((current) => ({
+        ...current,
+        stage: "error",
+        message: "Generation failed before both outputs completed.",
+        etaTargetAt: null,
+      }));
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function requestPlan(candidate: NonNullable<typeof selectedCandidate>, type: PlanOutputType) {
+    const response = await fetch("/api/research/plan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        candidate,
+        type,
+      }),
+    });
+
+    const payload = (await response.json()) as NichePlanResponse & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Failed to generate ${type === "prd" ? "PRD" : "Execution Plan"}.`);
+    }
+
+    return payload;
+  }
+
+  function exportResearchResults() {
+    if (!report) {
+      return;
+    }
+
+    const envelope: ExportEnvelope = {
+      app: "niche-validator-studio",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      report,
+    };
+
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const fileName = `${toSlug(report.query || "auto-niche")}-${report.generatedAt.slice(0, 10)}-research.json`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function openImportDialog() {
+    importFileRef.current?.click();
+  }
+
+  async function onImportResults(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const imported = extractResearchReport(parsed);
+      if (!imported) {
+        setError("Invalid research export file. Expected a Niche Validator research payload.");
+        return;
+      }
+
+      setReport(imported);
+      setError(null);
+      setPlanError(null);
+      setImportNote(`Loaded research from ${file.name}.`);
+      setPlanResults({});
+      setPlanState(EMPTY_PLAN_STATE);
+    } catch {
+      setError("Could not import file. Make sure it is valid JSON exported from this app.");
+    }
+  }
+
+  function copyMarkdown(type: PlanOutputType) {
+    const plan = planResults[type];
+    if (!plan?.markdown) {
+      return;
+    }
+
+    void navigator.clipboard.writeText(plan.markdown);
+  }
+
+  function downloadMarkdown(type: PlanOutputType) {
+    const plan = planResults[type];
+    if (!plan || !selectedCandidate) {
+      return;
+    }
+
+    const blob = new Blob([plan.markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${toSlug(selectedCandidate.name)}-${type}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="page-shell">
-      <header className="hero">
-        <p className="eyebrow">Last 30 Days Research Lab</p>
-        <h1>Search Reddit, X, and the Web. Then auto-synthesize with Claude.</h1>
+    <div className="nv-page">
+      <header className="nv-hero">
+        <p className="nv-kicker">Niche Validator Studio</p>
+        <h1>Find AI-buildable niches with real spending, pain, and launch room.</h1>
         <p>
-          End-to-end research pipeline with source controls, date filtering, scoring, dedupe, real-time progress tracking,
-          and one-click synthesis.
+          Enter a niche or leave blank to discover opportunities from Reddit, X, and the Web across the last 30 days.
+          Select a validated niche and generate both a PRD and execution plan.
         </p>
       </header>
 
-      <div className="app-grid">
-        <section className="panel query-panel">
-          <form onSubmit={onSubmit} className="query-form">
-            <label htmlFor="topic">Topic</label>
+      <div className="nv-shell">
+        <section className="nv-card nv-form-card">
+          <form onSubmit={onSubmit} className="nv-form">
+            <label htmlFor="niche">Niche (optional)</label>
             <textarea
-              id="topic"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="What do you want researched from the last 30 days?"
+              id="niche"
+              value={niche}
+              onChange={(event) => setNiche(event.target.value)}
+              placeholder="Example: AI workflow automation for dental practices"
               rows={4}
             />
+            <small className="nv-hint">Leave blank to discover niches from all sources in the last 30 days.</small>
 
-            <div className="example-row">
-              {EXAMPLE_TOPICS.map((example) => (
-                <button
-                  type="button"
-                  key={example}
-                  className="example-chip"
-                  onClick={() => setTopic(example)}
-                >
+            <div className="nv-example-row">
+              {EXAMPLE_NICHES.map((example) => (
+                <button type="button" key={example} className="nv-chip" onClick={() => setNiche(example)}>
                   {example}
                 </button>
               ))}
             </div>
 
-            <div className="form-row">
-              <label htmlFor="days">Lookback window: {days} days</label>
-              <input
-                id="days"
-                type="range"
-                min={1}
-                max={30}
-                value={days}
-                onChange={(event) => setDays(Number(event.target.value))}
-              />
-            </div>
-
-            <div className="form-row">
-              <span className="field-label">Depth</span>
-              <div className="depth-group">
+            <div className="nv-field-group">
+              <span>Research depth</span>
+              <div className="nv-depth-grid">
                 {(["quick", "default", "deep"] as const).map((value) => (
                   <button
                     key={value}
                     type="button"
-                    className={`depth-btn ${depth === value ? "is-active" : ""}`}
+                    className={`nv-depth ${depth === value ? "is-active" : ""}`}
                     onClick={() => setDepth(value)}
                   >
-                    {value}
+                    <strong>{value}</strong>
+                    <small>{depthHint(value)}</small>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="form-row">
-              <span className="field-label">Sources (multi-select)</span>
-              <div className="source-grid">
-                {SOURCE_OPTIONS.map((option) => {
-                  const selected = sources.includes(option.id);
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={`source-card ${selected ? "is-selected" : ""}`}
-                      onClick={() => toggleSource(option.id)}
-                    >
-                      <span>{option.label}</span>
-                      <small>{option.hint}</small>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {error ? <p className="nv-error">{error}</p> : null}
+            {importNote ? <p className="nv-note">{importNote}</p> : null}
 
-            {error ? <p className="error-text">{error}</p> : null}
-
-            <button type="submit" className="submit-btn" disabled={loading}>
-              {loading ? "Researching..." : "Run Research"}
+            <button type="submit" className="nv-submit" disabled={loading}>
+              {loading ? "Validating niches..." : "Run Niche Validator"}
             </button>
+
+            <div className="nv-file-actions">
+              <button type="button" className="nv-ghost" onClick={openImportDialog}>
+                Import Results
+              </button>
+              <button type="button" className="nv-ghost" onClick={exportResearchResults} disabled={!report}>
+                Export Results
+              </button>
+            </div>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept="application/json"
+              className="nv-hidden-input"
+              onChange={onImportResults}
+            />
           </form>
         </section>
 
-        <section className="panel results-panel">
+        <section className="nv-card nv-results-card">
           {loading ? (
-            <div className="loading-state is-inline">
-              <div className="spinner" aria-hidden />
-              <h3>{progress?.message ?? "Starting research..."}</h3>
+            <div className="nv-loading">
+              <div className="nv-spinner" aria-hidden />
+              <h3>{progress?.message ?? "Starting niche validator..."}</h3>
               <p>
-                Elapsed: <strong>{formatDuration(elapsedMs)}</strong>
+                Elapsed <strong>{formatDuration(elapsedMs)}</strong>
                 {etaTargetAt ? (
                   <>
                     {" "}
-                    • ETA: <strong>{formatDuration(remainingMs)}</strong>
+                    • ETA <strong>{formatDuration(remainingMs)}</strong>
                   </>
                 ) : null}
               </p>
-
-              <div className="progress-track" aria-hidden>
-                <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+              <div className="nv-progress-track" aria-hidden>
+                <div className="nv-progress-fill" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
               </div>
               <small>
-                {progress?.completedSteps ?? 0}/{progress?.totalSteps ?? 0} steps completed
+                {progress?.completedSteps ?? 0}/{progress?.totalSteps ?? 0} steps complete
               </small>
-
-              <div className="source-status-row">
-                {SOURCE_OPTIONS.map((option) => (
-                  <span key={option.id} className={`source-pill status-${progress?.sourceStatus[option.id] ?? "pending"}`}>
-                    {option.label}: {progress?.sourceStatus[option.id] ?? "pending"}
-                  </span>
-                ))}
-              </div>
             </div>
           ) : null}
 
-          {!report ? (
-            loading ? null : (
-              <div className="empty-state">
-                <h2>Ready to run.</h2>
-                <p>Pick your sources and topic, then run research. Claude synthesis appears automatically after search.</p>
-              </div>
-            )
-          ) : (
+          {!report && !loading ? (
+            <div className="nv-empty">
+              <h2>Ready to validate.</h2>
+              <p>Run a search to identify niches with buyer spend, recurring pain, and a launchable community.</p>
+            </div>
+          ) : null}
+
+          {report ? (
             <>
-              <div className="stats-row">
-                <StatCard label="Total" value={report.stats.total} />
-                <StatCard label="Reddit" value={report.stats.reddit} />
-                <StatCard label="X" value={report.stats.x} />
-                <StatCard label="Web" value={report.stats.web} />
+              <div className="nv-summary-bar">
+                <StatTile label="Candidates" value={report.stats.total} />
+                <StatTile label="All 3 checks pass" value={report.stats.passed} />
+                <StatTile label="Mode" value={report.mode} />
+                <StatTile label="Runtime" value={formatDuration(report.stats.elapsedMs)} />
               </div>
 
-              <div className="meta-row">
+              <div className="nv-summary-meta">
+                <span>{report.discoveryMode ? "Auto-discovery mode" : `Focused niche: ${report.query || "n/a"}`}</span>
                 <span>
-                  Range: {report.range.from} to {report.range.to}
+                  Window: {report.range.from} to {report.range.to}
                 </span>
-                <span>Runtime: {formatDuration(report.stats.elapsedMs)}</span>
-                <span>Generated: {new Date(report.stats.generatedAt).toLocaleString()}</span>
+                <span>Generated {new Date(report.generatedAt).toLocaleString()}</span>
               </div>
 
-              <article className="usage-card">
-                <header>
-                  <h3>Token Usage & Cost</h3>
-                </header>
-                <div className="usage-grid">
-                  <div>
-                    <small>Total tokens</small>
-                    <strong>{formatNumber(report.usage.totalTokens)}</strong>
-                  </div>
-                  <div>
-                    <small>Input tokens</small>
-                    <strong>{formatNumber(report.usage.inputTokens)}</strong>
-                  </div>
-                  <div>
-                    <small>Output tokens</small>
-                    <strong>{formatNumber(report.usage.outputTokens)}</strong>
-                  </div>
-                  <div>
-                    <small>Estimated cost (USD)</small>
-                    <strong>${report.usage.costUsd.toFixed(6)}</strong>
-                  </div>
-                </div>
-                <div className="usage-breakdown">
-                  {Object.entries(report.usage.byOperation).map(([operation, usage]) => {
-                    if (!usage) {
-                      return null;
-                    }
+              <div className="nv-usage-strip">
+                <span>
+                  Tokens used: <strong>{formatNumber(report.usage.totalTokens)}</strong>
+                </span>
+                <span>
+                  Cost: <strong>${report.usage.costUsd.toFixed(6)}</strong>
+                </span>
+                <span>
+                  Model calls: <strong>{report.usage.calls}</strong>
+                </span>
+              </div>
 
+              {visibleCandidates.length ? (
+                <p className="nv-pass-note">Showing only niches that passed spending, pain, and room checks.</p>
+              ) : (
+                <p className="nv-pass-note is-warning">
+                  No niches passed all three checks in this run. Try a different niche or switch to deep research.
+                </p>
+              )}
+
+              {visibleCandidates.length ? (
+                <div className="nv-candidate-grid">
+                  {visibleCandidates.map((candidate) => {
+                    const selected = selectedCandidate?.id === candidate.id;
                     return (
-                      <div key={operation} className="usage-row">
-                        <span>{operation}</span>
-                        <span>{formatNumber(usage.totalTokens)} tokens</span>
-                        <span>${usage.costUsd.toFixed(6)}</span>
-                        <span>{usage.model ?? "n/a"}</span>
-                      </div>
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        className={`nv-candidate ${selected ? "is-selected" : ""}`}
+                        onClick={() => setSelectedId(candidate.id)}
+                      >
+                        <header>
+                          <h3>{candidate.name}</h3>
+                          <span className={`nv-verdict verdict-${candidate.verdict}`}>{candidate.verdict}</span>
+                        </header>
+                        <p>{candidate.oneLiner || candidate.aiBuildAngle}</p>
+                        <div className="nv-check-row">
+                          <CheckPill label="Spending" pass={candidate.checks.spending.passed} />
+                          <CheckPill label="Pain" pass={candidate.checks.pain.passed} />
+                          <CheckPill label="Room" pass={candidate.checks.room.passed} />
+                        </div>
+                        <small>Score {candidate.score}/100</small>
+                      </button>
                     );
                   })}
                 </div>
-              </article>
-
-              {report.synthesis ? (
-                <article className="synthesis-card">
-                  {(() => {
-                    const synthesis = report.synthesis;
-                    if (!synthesis) {
-                      return null;
-                    }
-
-                    return (
-                      <>
-                        <header>
-                          <h2>Claude Synthesis</h2>
-                          <button
-                            type="button"
-                            className="ghost-btn"
-                            onClick={() => navigator.clipboard.writeText(formatSynthesis(synthesis))}
-                          >
-                            Copy
-                          </button>
-                        </header>
-
-                        <p>{synthesis.summary}</p>
-
-                        {synthesis.keyPatterns.length ? (
-                          <ol>
-                            {synthesis.keyPatterns.map((pattern) => (
-                              <li key={pattern}>{pattern}</li>
-                            ))}
-                          </ol>
-                        ) : null}
-
-                        <div className="synth-footer">
-                          <strong>Recommended format:</strong> {synthesis.recommendedFormat}
-                        </div>
-                        <div className="synth-footer">
-                          <strong>Caveats:</strong> {synthesis.caveats}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </article>
               ) : (
-                <article className="synthesis-card is-muted">
-                  <h2>Claude Synthesis</h2>
-                  <p>No synthesis was generated for this run.</p>
-                </article>
+                <div className="nv-empty nv-empty-result">
+                  <h2>No validated niches found.</h2>
+                  <p>Results are strict: each niche must pass spending, pain, and room with evidence.</p>
+                </div>
               )}
 
-              {errors.length ? (
-                <article className="error-box">
-                  <h3>Partial errors</h3>
-                  <ul>
-                    {errors.map((item) => (
-                      <li key={item.key}>
-                        <strong>{item.key}:</strong> {item.value}
-                      </li>
+              {selectedCandidate ? (
+                <article className="nv-detail">
+                  <header>
+                    <h2>{selectedCandidate.name}</h2>
+                  </header>
+
+                  <p className="nv-lead">{selectedCandidate.aiBuildAngle}</p>
+                  <p className="nv-meta">
+                    Audience: {selectedCandidate.audience || "n/a"} • Community: {selectedCandidate.checks.room.communityName}
+                  </p>
+
+                  <div className="nv-detail-grid">
+                    <CheckBlock title="Spending" lines={selectedCandidate.checks.spending.evidence} />
+                    <CheckBlock title="Pain" lines={selectedCandidate.checks.pain.evidence} />
+                    <CheckBlock title="Room" lines={selectedCandidate.checks.room.evidence} />
+                  </div>
+
+                  <div className="nv-source-list">
+                    {selectedCandidate.sources.slice(0, 8).map((source) => (
+                      <a key={`${source.url}-${source.title}`} href={source.url} target="_blank" rel="noreferrer">
+                        <span>{source.type}</span>
+                        {source.title}
+                      </a>
                     ))}
-                  </ul>
+                  </div>
+
+                  {planState.stage === "running" ? (
+                    <div className="nv-plan-status">
+                      <h4>{planState.message}</h4>
+                      <p>
+                        Elapsed <strong>{formatDuration(planElapsedMs)}</strong>
+                        {planState.etaTargetAt ? (
+                          <>
+                            {" "}
+                            • ETA <strong>{formatDuration(planRemainingMs)}</strong>
+                          </>
+                        ) : null}
+                      </p>
+                      <div className="nv-progress-track" aria-hidden>
+                        <div
+                          className="nv-progress-fill"
+                          style={{ width: `${Math.max(0, Math.min(100, planProgressPercent))}%` }}
+                        />
+                      </div>
+                      <small>
+                        {planState.completed}/{planState.total} outputs completed
+                      </small>
+                    </div>
+                  ) : null}
+
+                  {planState.stage === "complete" ? <p className="nv-note">{planState.message}</p> : null}
+                  {planError ? <p className="nv-error">{planError}</p> : null}
+
+                  <button type="button" className="nv-submit" onClick={onGenerateOutputs} disabled={planning}>
+                    {planning ? "Generating outputs..." : "Proceed: Generate PRD + Execution Plan"}
+                  </button>
                 </article>
               ) : null}
 
-              <div className="tabs">
-                {SOURCE_OPTIONS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`tab ${activeTab === option.id ? "is-active" : ""}`}
-                    onClick={() => setActiveTab(option.id)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <div className="nv-output-grid">
+                {PLAN_SEQUENCE.map((type) => {
+                  const plan = planResults[type];
+                  if (!plan) {
+                    return null;
+                  }
 
-              <div className="items-list">
-                {activeItems.length ? (
-                  activeItems.map((item) => <ResultCard key={item.id + item.url} item={item} />)
-                ) : (
-                  <p className="empty-source">No {activeTab} results in this run.</p>
-                )}
+                  return (
+                    <article key={type} className="nv-markdown">
+                      <header>
+                        <h2>{type === "prd" ? "PRD" : "Execution Plan"}</h2>
+                        <div>
+                          <button type="button" className="nv-ghost" onClick={() => copyMarkdown(type)}>
+                            Copy Markdown
+                          </button>
+                          <button type="button" className="nv-ghost" onClick={() => downloadMarkdown(type)}>
+                            Export .md
+                          </button>
+                        </div>
+                      </header>
+                      <p className="nv-meta">
+                        Generated {new Date(plan.generatedAt).toLocaleString()} • {formatNumber(plan.usage.totalTokens)} tokens
+                        • ${plan.usage.costUsd.toFixed(6)}
+                      </p>
+                      <pre>{plan.markdown}</pre>
+                    </article>
+                  );
+                })}
               </div>
             </>
-          )}
+          ) : null}
         </section>
       </div>
     </div>
   );
+}
+
+function extractResearchReport(value: unknown): NicheResearchResponse | null {
+  const candidate =
+    value && typeof value === "object" && "report" in value
+      ? (value as { report?: unknown }).report
+      : value;
+
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const typed = candidate as Partial<NicheResearchResponse>;
+  if (!typed.stats || !typed.range || !typed.usage || !Array.isArray(typed.candidates)) {
+    return null;
+  }
+
+  if (typeof typed.mode !== "string" || typeof typed.generatedAt !== "string") {
+    return null;
+  }
+
+  return typed as NicheResearchResponse;
+}
+
+function depthHint(depth: NicheResearchDepth) {
+  if (depth === "quick") {
+    return "~8 min runtime";
+  }
+
+  if (depth === "deep") {
+    return "~11 min runtime";
+  }
+
+  return "~10 min runtime";
 }
 
 function formatNumber(value: number) {
@@ -532,78 +713,42 @@ function formatDuration(ms: number) {
   return `${minutes}:${seconds}`;
 }
 
-function formatSynthesis(synthesis: NonNullable<ResearchResponse["synthesis"]>) {
-  const lines = [
-    `Summary: ${synthesis.summary}`,
-    "",
-    "Key patterns:",
-    ...synthesis.keyPatterns.map((pattern, index) => `${index + 1}. ${pattern}`),
-    "",
-    `Recommended format: ${synthesis.recommendedFormat}`,
-    `Caveats: ${synthesis.caveats}`,
-  ];
+function toSlug(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
 
-  return lines.join("\n");
+  return slug || "niche-validator-output";
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="stat-card">
-      <span>{label}</span>
+    <div className="nv-stat-tile">
+      <small>{label}</small>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function ResultCard({ item }: { item: SearchItem }) {
-  const date = item.date ?? "unknown";
+function CheckPill({ label, pass }: { label: string; pass: boolean }) {
+  return <span className={`nv-check-pill ${pass ? "is-pass" : "is-fail"}`}>{label}</span>;
+}
 
-  if (item.source === "reddit") {
-    return (
-      <article className="result-card">
-        <header>
-          <span className="pill">Reddit</span>
-          <span>Score {item.score}</span>
-        </header>
-        <h4>{item.title}</h4>
-        <p className="meta">r/{item.subreddit} • {date}</p>
-        <p>{item.why_relevant || "No relevance notes returned."}</p>
-        <a href={item.url} target="_blank" rel="noreferrer">
-          Open source
-        </a>
-      </article>
-    );
-  }
-
-  if (item.source === "x") {
-    return (
-      <article className="result-card">
-        <header>
-          <span className="pill">X</span>
-          <span>Score {item.score}</span>
-        </header>
-        <h4>@{item.author_handle || "unknown"}</h4>
-        <p>{item.text}</p>
-        <p className="meta">{date}</p>
-        <a href={item.url} target="_blank" rel="noreferrer">
-          Open source
-        </a>
-      </article>
-    );
-  }
-
+function CheckBlock({ title, lines }: { title: string; lines: string[] }) {
   return (
-    <article className="result-card">
-      <header>
-        <span className="pill">Web</span>
-        <span>Score {item.score}</span>
-      </header>
-      <h4>{item.title}</h4>
-      <p className="meta">{item.source_domain} • {date}</p>
-      <p>{item.snippet}</p>
-      <a href={item.url} target="_blank" rel="noreferrer">
-        Open source
-      </a>
-    </article>
+    <section className="nv-check-block">
+      <h4>{title}</h4>
+      {lines.length ? (
+        <ul>
+          {lines.map((line, index) => (
+            <li key={`${title}-${index}`}>{line}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>No evidence captured.</p>
+      )}
+    </section>
   );
 }
