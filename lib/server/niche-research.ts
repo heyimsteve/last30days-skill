@@ -1939,6 +1939,7 @@ async function fetchNicheTrendNews({
 }) {
   const model = process.env.OPENROUTER_WEB_MODEL ?? COMPETITOR_MODEL_DEFAULT;
   const maxItems = mode === "quick" ? 3 : mode === "deep" ? 7 : 5;
+  const safetyTimeoutMs = getTrendNewsSafetyTimeoutMs();
 
   try {
     return await runTrendNewsAttempt({
@@ -1946,7 +1947,7 @@ async function fetchNicheTrendNews({
       range,
       model,
       maxItems,
-      timeoutMs: null,
+      timeoutMs: safetyTimeoutMs,
       signal,
       compact: false,
     });
@@ -1961,7 +1962,7 @@ async function fetchNicheTrendNews({
       range,
       model,
       maxItems: fallbackMaxItems,
-      timeoutMs: null,
+      timeoutMs: safetyTimeoutMs,
       signal,
       compact: true,
     });
@@ -2096,6 +2097,24 @@ function getCompetitorTimeout(mode: NicheResearchDepth) {
     return 90000;
   }
   return 70000;
+}
+
+function getTrendNewsSafetyTimeoutMs() {
+  const configured = process.env.OPENROUTER_TREND_TIMEOUT_MS;
+  if (configured === undefined || configured === null || configured.trim() === "") {
+    return 1_800_000;
+  }
+
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) {
+    return 1_800_000;
+  }
+
+  if (parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
 }
 
 function isRetryableTrendError(error: unknown) {

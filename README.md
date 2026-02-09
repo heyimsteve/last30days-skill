@@ -53,7 +53,7 @@ Notes:
 
 - Terminal output like `POST /api/research/stream 200 in 22.6min` is the full open duration of the streaming request.
 - Next.js dev logs may label this as `render`, but it primarily reflects research pipeline time, not page rendering.
-- Trend/news lookup has no client-side timeout cap; it can continue until completion or user pause/stop, with retry/fallback behavior.
+- Trend/news lookup uses a high safety cap (`OPENROUTER_TREND_TIMEOUT_MS`, default 30 minutes) and supports `0` to disable.
 
 ## Stack
 
@@ -79,6 +79,7 @@ OPENROUTER_PLAN_MODEL=anthropic/claude-sonnet-4.5
 OPENROUTER_REDDIT_MODEL=openai/gpt-5.2:online
 OPENROUTER_X_MODEL=x-ai/grok-4.1-fast:online
 OPENROUTER_WEB_MODEL=openai/gpt-5.2:online
+OPENROUTER_TREND_TIMEOUT_MS=1800000
 ```
 
 ## Run
