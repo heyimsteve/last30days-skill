@@ -2,12 +2,13 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { NicheCandidate, NicheResearchDepth, NicheResearchResponse, NicheTrendNews } from "@/lib/niche-types";
-import { RedditItem, WebItem, XItem, YouTubeItem } from "@/lib/types";
+import { RedditItem, WebItem, XItem } from "@/lib/types";
+
+const APP_ID = "last30days-opportunity-studio";
 
 type RawRedditItem = Omit<RedditItem, "date_confidence" | "subs" | "score" | "source">;
 type RawXItem = Omit<XItem, "date_confidence" | "subs" | "score" | "source">;
 type RawWebItem = Omit<WebItem, "date_confidence" | "subs" | "score" | "source">;
-type RawYouTubeItem = Omit<YouTubeItem, "date_confidence" | "subs" | "score" | "source">;
 
 interface UsageTotals {
   inputTokens: number;
@@ -35,7 +36,6 @@ export interface NicheResearchCheckpoint {
     reddit: RawRedditItem[];
     x: RawXItem[];
     web: RawWebItem[];
-    youtube: RawYouTubeItem[];
   };
   finalCandidates: NicheCandidate[] | null;
   enrichedCandidates: NicheCandidate[] | null;
@@ -106,7 +106,7 @@ export async function saveNicheRecoveryArtifact(input: {
     filePath,
     JSON.stringify(
       {
-        app: "niche-validator-studio",
+        app: APP_ID,
         kind: "recovery-artifact",
         version: 1,
         savedAt: new Date().toISOString(),

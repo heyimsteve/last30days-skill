@@ -3,11 +3,13 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  MarketAnalysisResult,
   NichePlanResponse,
   NicheResearchDepth,
   NicheResearchProgressEvent,
   NicheResearchResponse,
   PlanOutputType,
+  PromoPackResponse,
   TokenUsageSummary,
 } from "@/lib/niche-types";
 
@@ -15,16 +17,20 @@ const DEFAULT_SUGGESTED_NICHES = [
   "Dental insurance claim denials",
   "Shopify refund abuse detection",
   "Home services quote follow-up",
-  "YouTube creator sponsorship ops",
+  "Creator sponsorship operations",
   "Legal intake triage automation",
   "Property management maintenance routing",
   "Clinic prior auth paperwork",
   "Freight broker load follow-ups",
 ];
 
-const PLAN_SEQUENCE: PlanOutputType[] = ["prd", "plan"];
+const PLAN_SEQUENCE: PlanOutputType[] = ["prd", "market", "plan"];
 const ESTIMATED_PRD_MS = 105000;
+const ESTIMATED_MARKET_MS = 105000;
 const ESTIMATED_PLAN_MS = 105000;
+const APP_NAME = "Last30Days Opportunity Studio";
+const APP_ID = "last30days-opportunity-studio";
+type AppId = typeof APP_ID | "niche-validator-studio";
 
 interface StreamPayload {
   type: "ready" | "progress" | "result" | "error";
@@ -43,7 +49,7 @@ interface PlanGenerationState {
 }
 
 interface ExportEnvelope {
-  app: "niche-validator-studio";
+  app: AppId;
   version: 1;
   exportedAt: string;
   report: NicheResearchResponse;
@@ -62,12 +68,12 @@ interface ImportedRecoveryCheckpoint {
     reddit: unknown[];
     x: unknown[];
     web: unknown[];
-    youtube: unknown[];
+    youtube?: unknown[];
   };
 }
 
 interface RecoveryArtifactEnvelope {
-  app: "niche-validator-studio";
+  app?: AppId;
   kind: "recovery-artifact";
   version: 1;
   checkpointKey?: string;
@@ -104,6 +110,8 @@ interface NicheRunState {
 
 interface BudgetEstimate {
   niches: number;
+  perNicheTokens: number;
+  perNicheCostUsd: number;
   tokens: number;
   tokensLow: number;
   tokensHigh: number;
@@ -140,6 +148,12 @@ export function ResearchConsole() {
   const [planning, setPlanning] = useState(false);
   const [planResults, setPlanResults] = useState<Partial<Record<PlanOutputType, NichePlanResponse>>>({});
   const [planState, setPlanState] = useState<PlanGenerationState>(EMPTY_PLAN_STATE);
+  const [marketAnalysisLoading, setMarketAnalysisLoading] = useState(false);
+  const [marketAnalysisError, setMarketAnalysisError] = useState<string | null>(null);
+  const [marketAnalysisByCandidate, setMarketAnalysisByCandidate] = useState<Record<string, MarketAnalysisResult>>({});
+  const [promoPackLoading, setPromoPackLoading] = useState(false);
+  const [promoPackError, setPromoPackError] = useState<string | null>(null);
+  const [promoPackByCandidate, setPromoPackByCandidate] = useState<Record<string, PromoPackResponse>>({});
 
   const [error, setError] = useState<string | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -207,6 +221,33 @@ export function ResearchConsole() {
 
     return run?.trendNews ?? [];
   }, [report, selectedCandidate]);
+
+  const selectedTrendSynthesis = useMemo(() => {
+    if (!report || !selectedCandidate) {
+      return null;
+    }
+
+    const candidateNiche = selectedCandidate.requestedNiche?.trim().toLowerCase();
+    const run =
+      report.runs.find((entry) => candidateNiche && entry.niche.trim().toLowerCase() === candidateNiche) ??
+      report.runs.find((entry) => entry.status === "completed");
+
+    return run?.trendSynthesis ?? null;
+  }, [report, selectedCandidate]);
+
+  const selectedMarketAnalysis = useMemo(() => {
+    if (!selectedCandidate) {
+      return null;
+    }
+    return marketAnalysisByCandidate[selectedCandidate.id] ?? null;
+  }, [marketAnalysisByCandidate, selectedCandidate]);
+
+  const selectedPromoPack = useMemo(() => {
+    if (!selectedCandidate) {
+      return null;
+    }
+    return promoPackByCandidate[selectedCandidate.id] ?? null;
+  }, [promoPackByCandidate, selectedCandidate]);
 
   useEffect(() => {
     if (!visibleCandidates.length) {
@@ -579,6 +620,10 @@ export function ResearchConsole() {
     setImportNote(null);
     setPlanResults({});
     setPlanState(EMPTY_PLAN_STATE);
+    setMarketAnalysisError(null);
+    setPromoPackError(null);
+    setMarketAnalysisByCandidate({});
+    setPromoPackByCandidate({});
     setReport(null);
     setNicheRuns(initialRuns);
 
@@ -701,34 +746,40 @@ export function ResearchConsole() {
     setPlanResults({});
     setPlanState({
       stage: "running",
-      message: "Generating PRD...",
+      message: `Generating ${labelForPlanType(PLAN_SEQUENCE[0])}...`,
       completed: 0,
       total: PLAN_SEQUENCE.length,
       startedAt,
-      etaTargetAt: startedAt + ESTIMATED_PRD_MS + ESTIMATED_PLAN_MS,
+      etaTargetAt: startedAt + estimatePlanDurationForSequence(PLAN_SEQUENCE),
     });
 
-    let prdResult: NichePlanResponse | null = null;
-
     try {
-      prdResult = await requestPlan(selectedCandidate, "prd");
-      setPlanResults({ prd: prdResult });
+      const nextResults: Partial<Record<PlanOutputType, NichePlanResponse>> = {};
 
-      const secondStepStart = Date.now();
-      setPlanState({
-        stage: "running",
-        message: "PRD complete. Generating Execution Plan...",
-        completed: 1,
-        total: PLAN_SEQUENCE.length,
-        startedAt,
-        etaTargetAt: secondStepStart + ESTIMATED_PLAN_MS,
-      });
+      for (let index = 0; index < PLAN_SEQUENCE.length; index += 1) {
+        const type = PLAN_SEQUENCE[index];
+        const result = await requestPlan(selectedCandidate, type);
+        nextResults[type] = result;
+        setPlanResults({ ...nextResults });
 
-      const executionResult = await requestPlan(selectedCandidate, "plan");
-      setPlanResults({ prd: prdResult, plan: executionResult });
+        const remaining = PLAN_SEQUENCE.slice(index + 1);
+        if (!remaining.length) {
+          break;
+        }
+
+        setPlanState({
+          stage: "running",
+          message: `${labelForPlanType(type)} complete. Generating ${labelForPlanType(remaining[0])}...`,
+          completed: index + 1,
+          total: PLAN_SEQUENCE.length,
+          startedAt,
+          etaTargetAt: Date.now() + estimatePlanDurationForSequence(remaining),
+        });
+      }
+
       setPlanState({
         stage: "complete",
-        message: "PRD and Execution Plan are ready.",
+        message: "PRD, Market Plan, and Execution Plan are ready.",
         completed: PLAN_SEQUENCE.length,
         total: PLAN_SEQUENCE.length,
         startedAt,
@@ -739,11 +790,84 @@ export function ResearchConsole() {
       setPlanState((current) => ({
         ...current,
         stage: "error",
-        message: "Generation failed before both outputs completed.",
+        message: "Generation failed before all outputs completed.",
         etaTargetAt: null,
       }));
     } finally {
       setPlanning(false);
+    }
+  }
+
+  async function onRunMarketAnalysis() {
+    if (!selectedCandidate) {
+      setMarketAnalysisError("Select a niche result first.");
+      return;
+    }
+
+    setMarketAnalysisLoading(true);
+    setMarketAnalysisError(null);
+
+    try {
+      const response = await fetch("/api/research/market-analysis", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          candidate: selectedCandidate,
+          depth,
+        }),
+      });
+
+      const payload = (await response.json()) as MarketAnalysisResult & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to generate Market Analysis.");
+      }
+
+      setMarketAnalysisByCandidate((current) => ({
+        ...current,
+        [selectedCandidate.id]: payload,
+      }));
+    } catch (requestError) {
+      setMarketAnalysisError(requestError instanceof Error ? requestError.message : "Unexpected market analysis failure.");
+    } finally {
+      setMarketAnalysisLoading(false);
+    }
+  }
+
+  async function onGeneratePromoPack() {
+    if (!selectedCandidate) {
+      setPromoPackError("Select a niche result first.");
+      return;
+    }
+
+    setPromoPackLoading(true);
+    setPromoPackError(null);
+
+    try {
+      const response = await fetch("/api/research/promo-pack", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          candidate: selectedCandidate,
+        }),
+      });
+
+      const payload = (await response.json()) as PromoPackResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to generate Promo Pack.");
+      }
+
+      setPromoPackByCandidate((current) => ({
+        ...current,
+        [selectedCandidate.id]: payload,
+      }));
+    } catch (requestError) {
+      setPromoPackError(requestError instanceof Error ? requestError.message : "Unexpected promo pack generation failure.");
+    } finally {
+      setPromoPackLoading(false);
     }
   }
 
@@ -761,7 +885,7 @@ export function ResearchConsole() {
 
     const payload = (await response.json()) as NichePlanResponse & { error?: string };
     if (!response.ok) {
-      throw new Error(payload.error ?? `Failed to generate ${type === "prd" ? "PRD" : "Execution Plan"}.`);
+      throw new Error(payload.error ?? `Failed to generate ${labelForPlanType(type)}.`);
     }
 
     return payload;
@@ -773,7 +897,7 @@ export function ResearchConsole() {
     }
 
     const envelope: ExportEnvelope = {
-      app: "niche-validator-studio",
+      app: APP_ID,
       version: 1,
       exportedAt: new Date().toISOString(),
       report,
@@ -815,7 +939,7 @@ export function ResearchConsole() {
       const recoverySnapshot = extractRecoverySnapshot(parsed);
 
       if (mode === "report" && !imported) {
-        setError("Invalid research export file. Expected a Niche Validator research payload.");
+        setError("Invalid research export file. Expected a Last30Days research payload.");
         return;
       }
 
@@ -879,6 +1003,8 @@ export function ResearchConsole() {
       }
       setError(null);
       setPlanError(null);
+      setMarketAnalysisError(null);
+      setPromoPackError(null);
       if (mode === "recovery") {
         setImportNote(
           imported
@@ -890,6 +1016,8 @@ export function ResearchConsole() {
       }
       setPlanResults({});
       setPlanState(EMPTY_PLAN_STATE);
+      setMarketAnalysisByCandidate({});
+      setPromoPackByCandidate({});
       if (!recoverySnapshot) {
         setNicheRuns([]);
         setLoading(false);
@@ -933,13 +1061,18 @@ export function ResearchConsole() {
   return (
     <div className="nv-page">
       <header className="nv-hero">
-        <p className="nv-kicker">Niche Validator Studio</p>
+        <p className="nv-kicker">{APP_NAME}</p>
         <h1>Find buildable AI businesses with proof, not vibes.</h1>
         <p>
-          Enter one or more niches separated by commas and run all research in parallel. Every winning idea includes
-          demand, market, monetization, GTM, build blueprint, and validation experiments from Reddit, X, web, and
-          YouTube signals.
+          Run trend-first research across the latest 30 days of Reddit, X, and web sources. Generate provable ideas,
+          score market fit, create promo packs, and move straight into PRD, Market Plan, and Execution Plan.
         </p>
+        <div className="nv-hero-badges">
+          <span>3 trend queries per niche</span>
+          <span>Reddit + X + Web only</span>
+          <span>Proof-backed ideas</span>
+          <span>Market Analysis + Promo Pack</span>
+        </div>
       </header>
 
       <div className="nv-shell">
@@ -994,6 +1127,10 @@ export function ResearchConsole() {
                   </button>
                 ))}
               </div>
+              <small className="nv-hint">
+                Profile: {depthProfileLabel(depth)} • ~{formatNumber(budgetEstimate.perNicheTokens)} tokens per niche • ~$
+                {budgetEstimate.perNicheCostUsd.toFixed(2)} per niche
+              </small>
             </div>
 
             {error ? <p className="nv-error">{error}</p> : null}
@@ -1001,6 +1138,9 @@ export function ResearchConsole() {
 
             <div className="nv-estimate">
               <strong>Estimated total research usage</strong>
+              <small>
+                Trend-first 3-query pipeline estimate based on current depth and niche count.
+              </small>
               <small>
                 {budgetEstimate.niches} niche{budgetEstimate.niches === 1 ? "" : "s"} •{" "}
                 {formatNumber(budgetEstimate.tokens)} tokens (~{formatNumber(budgetEstimate.tokensLow)}-
@@ -1014,7 +1154,7 @@ export function ResearchConsole() {
                 ? loadingLabel
                 : inputNiches.length > 1
                   ? `Run ${inputNiches.length} Niches In Parallel`
-                  : "Run Niche Validator"}
+                  : "Run Research"}
             </button>
 
             <div className="nv-file-actions">
@@ -1198,6 +1338,7 @@ export function ResearchConsole() {
                 <StatTile label="Candidates" value={report.stats.total} />
                 <StatTile label="Niche runs" value={`${report.stats.runsCompleted}/${report.stats.runsTotal}`} />
                 <StatTile label="Mode" value={report.mode} />
+                <StatTile label="Sources" value="Reddit + X + Web" />
                 <StatTile label="Runtime" value={formatDuration(report.stats.elapsedMs)} />
               </div>
 
@@ -1238,7 +1379,7 @@ export function ResearchConsole() {
               </div>
 
               {visibleCandidates.length ? (
-                <p className="nv-pass-note">Showing vetted ideas with full dossier output for each niche.</p>
+                <p className="nv-pass-note">Showing vetted and provable ideas with full dossier output for each niche.</p>
               ) : (
                 <p className="nv-pass-note is-warning">
                   No niches passed all checks in this run. Try a deeper search or refine your niche input.
@@ -1366,6 +1507,37 @@ export function ResearchConsole() {
                     <ClaimBlock title="Room Claims" claims={selectedCandidate.checks.room.claims} />
                   </div>
 
+                  {selectedCandidate.proofPoints.length ? (
+                    <section className="nv-news-block">
+                      <h4>Provable Evidence</h4>
+                      <ul>
+                        {selectedCandidate.proofPoints.map((item, index) => (
+                          <li key={`${item.sourceUrl}-${index}`}>
+                            <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+                              {item.claim}
+                            </a>
+                            <span>
+                              {item.sourceType}
+                              {item.date ? ` • ${item.date}` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
+                  {selectedTrendSynthesis ? (
+                    <section className="nv-news-block">
+                      <h4>Trend Synthesis</h4>
+                      <p>{selectedTrendSynthesis.summary}</p>
+                      <ul>
+                        {selectedTrendSynthesis.keyTrends.slice(0, 6).map((item) => (
+                          <li key={`trend-${item}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
                   {selectedTrendNews.length ? (
                     <section className="nv-news-block">
                       <h4>Latest Trend/News</h4>
@@ -1440,6 +1612,81 @@ export function ResearchConsole() {
                     ))}
                   </div>
 
+                  <div className="nv-action-stack">
+                    <div className="nv-inline-actions">
+                      <button
+                        type="button"
+                        className="nv-ghost"
+                        onClick={onRunMarketAnalysis}
+                        disabled={marketAnalysisLoading}
+                      >
+                        {marketAnalysisLoading ? "Running Market Analysis..." : "Market Analysis"}
+                      </button>
+                      <button
+                        type="button"
+                        className="nv-ghost"
+                        onClick={onGeneratePromoPack}
+                        disabled={promoPackLoading}
+                      >
+                        {promoPackLoading ? "Generating Promo Pack..." : "Promo Pack"}
+                      </button>
+                    </div>
+                    <button type="button" className="nv-submit" onClick={onGenerateOutputs} disabled={planning}>
+                      {planning ? "Generating outputs..." : "Proceed: Generate PRD + Market Plan + Execution Plan"}
+                    </button>
+                  </div>
+
+                  {selectedMarketAnalysis ? (
+                    <p className="nv-note">
+                      Market fit score: <strong>{selectedMarketAnalysis.overallScore}/100</strong> ({selectedMarketAnalysis.verdict}). You
+                      can still generate all build outputs regardless of score.
+                    </p>
+                  ) : null}
+
+                  {marketAnalysisError ? <p className="nv-error">{marketAnalysisError}</p> : null}
+                  {promoPackError ? <p className="nv-error">{promoPackError}</p> : null}
+
+                  {selectedMarketAnalysis ? (
+                    <section className="nv-news-block">
+                      <h4>
+                        Market Analysis: {selectedMarketAnalysis.overallScore}/100 ({selectedMarketAnalysis.verdict})
+                      </h4>
+                      <ul className="nv-score-grid">
+                        <li>Demand: {selectedMarketAnalysis.subscores.demand}/100</li>
+                        <li>Urgency: {selectedMarketAnalysis.subscores.urgency}/100</li>
+                        <li>Accessibility: {selectedMarketAnalysis.subscores.accessibility}/100</li>
+                        <li>Monetization: {selectedMarketAnalysis.subscores.monetization}/100</li>
+                        <li>Competition Headroom: {selectedMarketAnalysis.subscores.competitionHeadroom}/100</li>
+                      </ul>
+                      {selectedMarketAnalysis.rationale.length ? (
+                        <ul>
+                          {selectedMarketAnalysis.rationale.slice(0, 8).map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  {selectedPromoPack ? (
+                    <article className="nv-markdown">
+                      <header>
+                        <h2>Promo Pack</h2>
+                        <div>
+                          <button type="button" className="nv-ghost" onClick={() => void navigator.clipboard.writeText(selectedPromoPack.markdown)}>
+                            Copy Markdown
+                          </button>
+                        </div>
+                      </header>
+                      <p className="nv-meta">
+                        Generated {new Date(selectedPromoPack.generatedAt).toLocaleString()} •{" "}
+                        {formatNumber(selectedPromoPack.usage.totalTokens)} tokens • $
+                        {selectedPromoPack.usage.costUsd.toFixed(6)}
+                      </p>
+                      <pre>{selectedPromoPack.markdown}</pre>
+                    </article>
+                  ) : null}
+
                   {planState.stage === "running" ? (
                     <div className="nv-plan-status">
                       <h4>{planState.message}</h4>
@@ -1466,10 +1713,6 @@ export function ResearchConsole() {
 
                   {planState.stage === "complete" ? <p className="nv-note">{planState.message}</p> : null}
                   {planError ? <p className="nv-error">{planError}</p> : null}
-
-                  <button type="button" className="nv-submit" onClick={onGenerateOutputs} disabled={planning}>
-                    {planning ? "Generating outputs..." : "Proceed: Generate PRD + Execution Plan"}
-                  </button>
                 </article>
               ) : null}
 
@@ -1483,7 +1726,7 @@ export function ResearchConsole() {
                   return (
                     <article key={type} className="nv-markdown">
                       <header>
-                        <h2>{type === "prd" ? "PRD" : "Execution Plan"}</h2>
+                        <h2>{labelForPlanType(type)}</h2>
                         <div>
                           <button type="button" className="nv-ghost" onClick={() => copyMarkdown(type)}>
                             Copy Markdown
@@ -1614,18 +1857,20 @@ function parseCommaNiches(value: string) {
 
 function estimateBudget(nicheCount: number, depth: NicheResearchDepth): BudgetEstimate {
   const perNiche = depth === "quick"
-    ? { tokens: 360000, costUsd: 4.1 }
+    ? { tokens: 160000, costUsd: 1.85 }
     : depth === "deep"
-      ? { tokens: 1200000, costUsd: 13.6 }
-      : { tokens: 760000, costUsd: 8.7 };
+      ? { tokens: 460000, costUsd: 5.35 }
+      : { tokens: 290000, costUsd: 3.35 };
 
   const tokens = Math.round(perNiche.tokens * nicheCount);
   const costUsd = perNiche.costUsd * nicheCount;
-  const lowMultiplier = 0.75;
-  const highMultiplier = 1.45;
+  const lowMultiplier = 0.72;
+  const highMultiplier = 1.32;
 
   return {
     niches: nicheCount,
+    perNicheTokens: perNiche.tokens,
+    perNicheCostUsd: perNiche.costUsd,
     tokens,
     tokensLow: Math.round(tokens * lowMultiplier),
     tokensHigh: Math.round(tokens * highMultiplier),
@@ -1635,25 +1880,8 @@ function estimateBudget(nicheCount: number, depth: NicheResearchDepth): BudgetEs
   };
 }
 
-function estimateStepsForNiche(niche: string, depth: NicheResearchDepth) {
-  const hasNiche = Boolean(niche.trim());
-  if (hasNiche) {
-    if (depth === "quick") {
-      return 11;
-    }
-    if (depth === "deep") {
-      return 19;
-    }
-    return 17;
-  }
-
-  if (depth === "quick") {
-    return 7;
-  }
-  if (depth === "deep") {
-    return 10;
-  }
-  return 8;
+function estimateStepsForNiche() {
+  return 7;
 }
 
 function createRunState(niche: string, depth: NicheResearchDepth, index: number, batchId: string): NicheRunState {
@@ -1667,7 +1895,7 @@ function createRunState(niche: string, depth: NicheResearchDepth, index: number,
     progress: null,
     report: null,
     error: null,
-    estimatedTotalSteps: estimateStepsForNiche(cleaned, depth),
+    estimatedTotalSteps: estimateStepsForNiche(),
   };
 }
 
@@ -1681,11 +1909,13 @@ function combineReportsFromRuns(
 
   for (const report of completedReports) {
     for (const candidate of report.candidates) {
-      const key = `${candidate.requestedNiche ?? report.query}|${candidate.name.toLowerCase().trim()}`;
-      if (seen.has(key)) {
+      const keyByName = `${candidate.requestedNiche ?? report.query}|${candidate.name.toLowerCase().trim()}`;
+      const keyBySimilarity = toCandidateSimilarityKey(candidate, report.query);
+      if (seen.has(keyByName) || seen.has(keyBySimilarity)) {
         continue;
       }
-      seen.add(key);
+      seen.add(keyByName);
+      seen.add(keyBySimilarity);
       allCandidates.push({
         ...candidate,
         id: `${candidate.id}-${toSlug(candidate.requestedNiche || report.query || "candidate")}-${allCandidates.length + 1}`,
@@ -1719,6 +1949,7 @@ function combineReportsFromRuns(
         candidateCount: run.report.candidates.length,
         elapsedMs: run.report.stats.elapsedMs,
         trendNews: run.report.runs[0]?.trendNews ?? [],
+        trendSynthesis: run.report.runs[0]?.trendSynthesis ?? null,
       };
     }
 
@@ -1764,6 +1995,42 @@ function depthHint(depth: NicheResearchDepth) {
   }
 
   return "Balanced";
+}
+
+function depthProfileLabel(depth: NicheResearchDepth) {
+  if (depth === "quick") {
+    return "Lean signal pass";
+  }
+
+  if (depth === "deep") {
+    return "Most complete dossier pass";
+  }
+
+  return "Balanced validation pass";
+}
+
+function estimatePlanDurationForSequence(sequence: PlanOutputType[]) {
+  return sequence.reduce((total, type) => total + estimatePlanDuration(type), 0);
+}
+
+function estimatePlanDuration(type: PlanOutputType) {
+  if (type === "prd") {
+    return ESTIMATED_PRD_MS;
+  }
+  if (type === "market") {
+    return ESTIMATED_MARKET_MS;
+  }
+  return ESTIMATED_PLAN_MS;
+}
+
+function labelForPlanType(type: PlanOutputType) {
+  if (type === "prd") {
+    return "PRD";
+  }
+  if (type === "market") {
+    return "Market Plan";
+  }
+  return "Execution Plan";
 }
 
 function formatNumber(value: number) {
@@ -1888,6 +2155,22 @@ function toSlug(value: string) {
   return slug || "niche-validator-output";
 }
 
+function toCandidateSimilarityKey(candidate: NicheResearchResponse["candidates"][number], fallbackQuery: string) {
+  const scope = candidate.requestedNiche || fallbackQuery || "global";
+  const problem = (candidate.problemStatement || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  const proofUrls = (candidate.proofPoints || [])
+    .map((point) => point.sourceUrl.toLowerCase().replace(/\/$/, ""))
+    .sort()
+    .slice(0, 3)
+    .join("|");
+  return `${scope}|${problem}|${proofUrls}`;
+}
+
 function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="nv-stat-tile">
@@ -1998,6 +2281,7 @@ function normalizeImportedCandidate(candidate: NicheResearchResponse["candidates
     validationPlan: candidate.validationPlan || [],
     risks: candidate.risks || [],
     killCriteria: candidate.killCriteria || [],
+    proofPoints: candidate.proofPoints || [],
     checks: {
       ...candidate.checks,
       spending: {

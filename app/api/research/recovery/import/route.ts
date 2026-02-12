@@ -51,7 +51,14 @@ function normalizeCheckpoint(value: unknown): NicheResearchCheckpoint | null {
     return null;
   }
 
-  const typed = value as Partial<NicheResearchCheckpoint>;
+  const typed = value as Partial<NicheResearchCheckpoint> & {
+    allRaw?: {
+      reddit?: unknown;
+      x?: unknown;
+      web?: unknown;
+      youtube?: unknown;
+    };
+  };
   if (
     typed.version !== 1 ||
     typeof typed.niche !== "string" ||
@@ -66,6 +73,12 @@ function normalizeCheckpoint(value: unknown): NicheResearchCheckpoint | null {
     return null;
   }
 
-  return typed as NicheResearchCheckpoint;
+  return {
+    ...typed,
+    allRaw: {
+      reddit: Array.isArray(typed.allRaw?.reddit) ? typed.allRaw.reddit : [],
+      x: Array.isArray(typed.allRaw?.x) ? typed.allRaw.x : [],
+      web: Array.isArray(typed.allRaw?.web) ? typed.allRaw.web : [],
+    },
+  } as NicheResearchCheckpoint;
 }
-

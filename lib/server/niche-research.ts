@@ -7,11 +7,9 @@ import {
 } from "@/lib/server/niche-checkpoint";
 import {
   applyDateAndConfidenceReddit,
-  applyDateAndConfidenceYouTube,
   applyDateAndConfidenceWeb,
   applyDateAndConfidenceX,
   dedupeReddit,
-  dedupeYouTube,
   dedupeWeb,
   dedupeX,
   sortByScoreAndDate,
@@ -23,16 +21,19 @@ import {
   extractUsage,
   openRouterRequest,
 } from "@/lib/server/openrouter";
-import { scoreReddit, scoreWeb, scoreX, scoreYouTube } from "@/lib/server/scoring";
-import { searchReddit, searchWeb, searchX, searchYouTube } from "@/lib/server/search";
+import { scoreReddit, scoreWeb, scoreX } from "@/lib/server/scoring";
+import { searchReddit, searchWeb, searchX } from "@/lib/server/search";
 import {
   NicheCandidate,
+  NicheProofPoint,
   NicheResearchDepth,
   NicheResearchProgressEvent,
   NicheResearchResponse,
+  NicheSource,
   NicheTrendNews,
+  NicheTrendSynthesis,
 } from "@/lib/niche-types";
-import { RedditItem, WebItem, XItem, YouTubeItem } from "@/lib/types";
+import { RedditItem, WebItem, XItem } from "@/lib/types";
 
 interface NicheResearchInput {
   niche?: string;
@@ -61,6 +62,7 @@ interface RawNicheCandidate {
   recommendation?: unknown;
   score?: unknown;
   verdict?: unknown;
+  proofPoints?: unknown;
   demand?: {
     trendSummary?: unknown;
     urgencyDrivers?: unknown;
@@ -131,6 +133,13 @@ interface RawNicheCandidate {
   sources?: unknown;
 }
 
+interface RawProofPoint {
+  claim?: unknown;
+  sourceUrl?: unknown;
+  date?: unknown;
+  sourceType?: unknown;
+}
+
 interface RawCompetitor {
   name?: unknown;
   url?: unknown;
@@ -144,21 +153,28 @@ interface RawCompetitorOutput {
   competitors?: RawCompetitor[];
 }
 
-interface RawTrendNews {
-  title?: unknown;
-  url?: unknown;
+interface RawTrendSynthesis {
   summary?: unknown;
-  whyItMatters?: unknown;
-  date?: unknown;
-  confidence?: unknown;
-}
-
-interface RawTrendNewsOutput {
-  items?: RawTrendNews[];
+  keyTrends?: unknown;
+  unresolvedIssues?: unknown;
+  opportunityGaps?: unknown;
+  citations?: unknown;
 }
 
 interface RawCandidatesOutput {
   candidates?: RawNicheCandidate[];
+}
+
+interface EvidenceReference {
+  sourceType: "reddit" | "x" | "web";
+  url: string;
+  date: string | null;
+  headline: string;
+}
+
+interface EvidenceIndex {
+  refs: EvidenceReference[];
+  byMatchKey: Map<string, EvidenceReference>;
 }
 
 interface ChatCompletionResponse {
@@ -178,13 +194,7 @@ interface OpenRouterResponsesResponse {
 
 const VALIDATE_MODEL_DEFAULT = "anthropic/claude-sonnet-4.5";
 const COMPETITOR_MODEL_DEFAULT = "openai/gpt-5.2:online";
-
-type SearchResultShape = {
-  reddit: Awaited<ReturnType<typeof searchReddit>>["items"];
-  x: Awaited<ReturnType<typeof searchX>>["items"];
-  web: Awaited<ReturnType<typeof searchWeb>>["items"];
-  youtube: Awaited<ReturnType<typeof searchYouTube>>["items"];
-};
+const TREND_SYNTH_MODEL_DEFAULT = "anthropic/claude-sonnet-4.5";
 
 const MODE_CONFIG: Record<
   NicheResearchDepth,
@@ -193,85 +203,25 @@ const MODE_CONFIG: Record<
     perSourceLimit: number;
     validateMaxTokens: number;
     estimateMs: number;
-    discoveryQueries: string[];
   }
 > = {
   quick: {
     candidateCount: 4,
     perSourceLimit: 10,
     validateMaxTokens: 2600,
-    estimateMs: 840000,
-    discoveryQueries: [
-      "operators paying monthly for tools while complaining about repetitive manual workflows and slow revenue ops",
-      "teams asking for alternatives because current software is expensive missing automation and hard to onboard",
-    ],
+    estimateMs: 360000,
   },
   default: {
     candidateCount: 7,
     perSourceLimit: 16,
     validateMaxTokens: 4200,
-    estimateMs: 1500000,
-    discoveryQueries: [
-      "operators paying monthly for tools while complaining about repetitive manual workflows and slow revenue ops",
-      "reddit and x posts where people say frustrated wish there was or looking for better tools in operations",
-      "founders sharing manual workarounds spreadsheet workflows and hiring virtual assistants for tasks that could be automated",
-    ],
+    estimateMs: 900000,
   },
   deep: {
     candidateCount: 10,
     perSourceLimit: 24,
     validateMaxTokens: 5800,
-    estimateMs: 2160000,
-    discoveryQueries: [
-      "operators paying monthly for tools while complaining about repetitive manual workflows and slow revenue ops",
-      "reddit and x posts where people say frustrated wish there was or looking for better tools in operations",
-      "founders sharing manual workarounds spreadsheet workflows and hiring virtual assistants for tasks that could be automated",
-      "high-spend niches in healthcare insurance legal finance ecommerce with active communities and unresolved pain",
-      "buyers asking for done-for-you services because software options are too generic and setup takes too long",
-    ],
-  },
-};
-
-const EXTRA_FOCUSED_QUERY_SUFFIXES = [
-  "switching from",
-  "alternatives too expensive",
-  "manual workaround spreadsheet",
-  "hiring VA for",
-  "implementation pain onboarding",
-  "churn reasons",
-  "done for you service",
-  "agency process bottleneck",
-  "no code automation request",
-  "community asking for template/tool",
-];
-
-const DISCOVERY_CONCURRENCY_BY_MODE: Record<NicheResearchDepth, number> = {
-  quick: 2,
-  default: 3,
-  deep: 4,
-};
-
-const DISCOVERY_EARLY_STOP_RULES: Record<
-  NicheResearchDepth,
-  { minProcessedQueries: number; minSignalsTotal: number; minStrongSources: number; minSignalsPerStrongSource: number }
-> = {
-  quick: {
-    minProcessedQueries: 3,
-    minSignalsTotal: 26,
-    minStrongSources: 3,
-    minSignalsPerStrongSource: 4,
-  },
-  default: {
-    minProcessedQueries: 5,
-    minSignalsTotal: 44,
-    minStrongSources: 3,
-    minSignalsPerStrongSource: 7,
-  },
-  deep: {
-    minProcessedQueries: 6,
-    minSignalsTotal: 62,
-    minStrongSources: 3,
-    minSignalsPerStrongSource: 10,
+    estimateMs: 1320000,
   },
 };
 
@@ -289,8 +239,8 @@ export async function runNicheResearch(
 
   throwIfAborted(abortSignal);
 
-  const queries = niche ? buildFocusedQueries(niche, mode) : config.discoveryQueries;
-  const totalSteps = queries.length + 5;
+  const queries = niche ? buildFocusedQueries(niche) : buildDiscoveryQueries();
+  const totalSteps = queries.length + 4;
   const resumeCheckpoint = resumeKey ? await loadNicheCheckpoint(resumeKey) : null;
   const canResume =
     Boolean(resumeCheckpoint) &&
@@ -334,8 +284,8 @@ export async function runNicheResearch(
     canResume
       ? `Resuming ${niche || "auto-discovery"} from step ${Math.min(completedSteps, totalSteps)}/${totalSteps}.`
       : niche
-        ? `Preparing research pipeline for ${niche}.`
-        : "Preparing auto-discovery research pipeline.",
+        ? `Preparing trend-first research for ${niche}.`
+        : "Preparing auto-discovery trend-first research.",
   );
 
   if (checkpoint.finalReport) {
@@ -343,87 +293,46 @@ export async function runNicheResearch(
     return checkpoint.finalReport;
   }
 
-  const allRawReddit: SearchResultShape["reddit"] = [...checkpoint.allRaw.reddit];
-  const allRawX: SearchResultShape["x"] = [...checkpoint.allRaw.x];
-  const allRawWeb: SearchResultShape["web"] = [...checkpoint.allRaw.web];
-  const allRawYouTube: SearchResultShape["youtube"] = [...checkpoint.allRaw.youtube];
+  const allRawReddit: Awaited<ReturnType<typeof searchReddit>>["items"] = [...checkpoint.allRaw.reddit];
+  const allRawX: Awaited<ReturnType<typeof searchX>>["items"] = [...checkpoint.allRaw.x];
+  const allRawWeb: Awaited<ReturnType<typeof searchWeb>>["items"] = [...checkpoint.allRaw.web];
+
   let completedQueryCount = Math.min(checkpoint.completedQueryCount, queries.length);
   let finalCandidates = checkpoint.finalCandidates ? [...checkpoint.finalCandidates] : null;
   let enriched = checkpoint.enrichedCandidates ? [...checkpoint.enrichedCandidates] : null;
   let trendNews = checkpoint.trendNews ? [...checkpoint.trendNews] : null;
+  let trendSynthesis: NicheTrendSynthesis | null = null;
+
   const recoveryNotes = new Set<string>();
-  const discoveryConcurrency = DISCOVERY_CONCURRENCY_BY_MODE[mode];
 
   while (completedQueryCount < queries.length) {
     throwIfAborted(abortSignal);
-    const batchStart = completedQueryCount;
-    const batchEnd = Math.min(queries.length, batchStart + discoveryConcurrency);
-    const batchIndices = Array.from({ length: batchEnd - batchStart }, (_, offset) => batchStart + offset);
 
-    for (const index of batchIndices) {
-      const query = queries[index];
-      emit("discovering", describeQueryStep({ niche: niche || "this niche", query, index, total: queries.length }));
-    }
+    const index = completedQueryCount;
+    const query = queries[index];
+    emit("discovering", describeQueryStep({ niche, query, index, total: queries.length }));
 
-    const batchResults = await Promise.all(
-      batchIndices.map(async (index) => {
-        const query = queries[index];
-        const searchResult = await runThreeSourceSearch({
-          query,
-          mode,
-          fromDate: range.from,
-          toDate: range.to,
-          signal: abortSignal,
-        });
-        throwIfAborted(abortSignal);
-
-        return {
-          index,
-          searchResult,
-        };
-      }),
-    );
+    const searchResult = await runThreeSourceSearch({
+      query,
+      mode,
+      fromDate: range.from,
+      toDate: range.to,
+      signal: abortSignal,
+    });
     throwIfAborted(abortSignal);
 
-    for (const { searchResult } of batchResults) {
-      addUsage(usageTotals, searchResult.usage);
-      allRawReddit.push(...searchResult.items.reddit);
-      allRawX.push(...searchResult.items.x);
-      allRawWeb.push(...searchResult.items.web);
-      allRawYouTube.push(...searchResult.items.youtube);
-    }
+    addUsage(usageTotals, searchResult.usage);
+    allRawReddit.push(...searchResult.items.reddit);
+    allRawX.push(...searchResult.items.x);
+    allRawWeb.push(...searchResult.items.web);
 
-    completedQueryCount = batchEnd;
-    completedSteps += batchResults.length;
+    completedQueryCount += 1;
+    completedSteps += 1;
+
     emit(
       "discovering",
-      `Collected and scored fresh source signals for ${niche || "discovery mode"} (${completedSteps}/${totalSteps} steps).`,
+      `Collected Reddit/X/Web trend signals (${completedQueryCount}/${queries.length} queries).`,
     );
-
-    if (niche && completedQueryCount < queries.length) {
-      const earlyStop = evaluateDiscoveryEarlyStop({
-        mode,
-        processedQueryCount: completedQueryCount,
-        totalQueryCount: queries.length,
-        range,
-        allRaw: {
-          reddit: allRawReddit,
-          x: allRawX,
-          web: allRawWeb,
-          youtube: allRawYouTube,
-        },
-      });
-
-      if (earlyStop.shouldStop) {
-        const skippedQueries = queries.length - completedQueryCount;
-        completedQueryCount = queries.length;
-        completedSteps += skippedQueries;
-        emit(
-          "discovering",
-          `Evidence saturation reached (${earlyStop.summary}). Skipping ${skippedQueries} remaining query step${skippedQueries === 1 ? "" : "s"}.`,
-        );
-      }
-    }
 
     await persistCheckpoint({
       resumeKey,
@@ -436,7 +345,6 @@ export async function runNicheResearch(
           reddit: [...allRawReddit],
           x: [...allRawX],
           web: [...allRawWeb],
-          youtube: [...allRawYouTube],
         },
         trendNews: trendNews ? [...trendNews] : null,
       },
@@ -454,16 +362,44 @@ export async function runNicheResearch(
   const web = sortByScoreAndDate(
     dedupeWeb(scoreWeb(applyDateAndConfidenceWeb(allRawWeb, range.from, range.to))),
   ).slice(0, config.perSourceLimit);
-
-  const youtube = sortByScoreAndDate(
-    dedupeYouTube(scoreYouTube(applyDateAndConfidenceYouTube(allRawYouTube, range.from, range.to))),
-  ).slice(0, config.perSourceLimit);
+  const evidenceIndex = createEvidenceIndex({ reddit, x, web });
 
   completedSteps += 1;
-  emit("validating", "Validating candidates against spending, pain, and launch room checks...");
-  throwIfAborted(abortSignal);
+  emit("validating", "Synthesizing latest 30-day trends and unresolved issues with Claude...");
+
+  try {
+    const synthesisRun = await synthesizeTrendEvidence({
+      niche: niche || "cross-niche discovery",
+      range,
+      evidenceIndex,
+      signal: abortSignal,
+    });
+    trendSynthesis = synthesisRun.synthesis;
+    addUsage(usageTotals, synthesisRun.usage);
+  } catch (error) {
+    if (isAbortLikeError(error) || abortSignal?.aborted) {
+      throw toAbortError(error);
+    }
+    trendSynthesis = emptyTrendSynthesis();
+    const message = `Trend synthesis degraded (${toRecoveryReason(error)}). Continuing with direct evidence.`;
+    recoveryNotes.add(message);
+    emit("validating", message);
+  }
+
+  if (!trendSynthesis || isWeakTrendSynthesis(trendSynthesis)) {
+    const heuristic = buildHeuristicTrendSynthesis({
+      niche: niche || "cross-niche discovery",
+      evidenceIndex,
+      range,
+    });
+    trendSynthesis = heuristic;
+    recoveryNotes.add("Applied deterministic trend synthesis from collected evidence.");
+  }
 
   if (!finalCandidates) {
+    completedSteps += 1;
+    emit("validating", "Generating provable AI product ideas from synthesized trends...");
+
     try {
       let candidates = await generateValidatedCandidates({
         niche,
@@ -473,11 +409,11 @@ export async function runNicheResearch(
         reddit,
         x,
         web,
-        youtube,
+        trendSynthesis: trendSynthesis ?? emptyTrendSynthesis(),
+        retryMode: false,
         signal: abortSignal,
       });
       throwIfAborted(abortSignal);
-
       addUsage(usageTotals, candidates.usage);
 
       if (!candidates.items.length && (reddit.length || x.length || web.length)) {
@@ -489,25 +425,44 @@ export async function runNicheResearch(
           reddit,
           x,
           web,
-          youtube,
+          trendSynthesis: trendSynthesis ?? emptyTrendSynthesis(),
           retryMode: true,
           signal: abortSignal,
         });
         throwIfAborted(abortSignal);
-
         addUsage(usageTotals, retry.usage);
         candidates = retry;
       }
 
       const normalized = candidates.items
-        .map((candidate, index) => normalizeCandidate(candidate, index, niche || null))
-        .filter((candidate) => isLaunchReadyCandidate(candidate));
+        .map((candidate, index) => normalizeCandidate(candidate, index, niche || null, evidenceIndex));
 
-      finalCandidates = dedupeCandidates(normalized);
+      const launchReady = normalized.filter((candidate) => isLaunchReadyCandidate(candidate));
+      if (launchReady.length) {
+        finalCandidates = dedupeCandidates(launchReady);
+      } else {
+        const evidenceBacked = normalized.filter((candidate) => isEvidenceBackedCandidate(candidate));
+        if (evidenceBacked.length) {
+          recoveryNotes.add("No strict pass candidates survived. Returned evidence-backed watchlist candidates.");
+          finalCandidates = dedupeCandidates(evidenceBacked);
+        } else {
+          finalCandidates = buildFallbackCandidatesFromEvidence({
+            niche,
+            requestedNiche: niche || null,
+            trendSynthesis: trendSynthesis ?? emptyTrendSynthesis(),
+            evidenceIndex,
+            candidateCount: Math.min(config.candidateCount, 2),
+          });
+          if (finalCandidates.length) {
+            recoveryNotes.add("Model returned no usable candidates. Generated deterministic evidence-backed fallback ideas.");
+          }
+        }
+      }
     } catch (error) {
       if (isAbortLikeError(error) || abortSignal?.aborted) {
         throw toAbortError(error);
       }
+
       finalCandidates = [];
       const message = `Candidate validation degraded (${toRecoveryReason(error)}). Returning partial run output.`;
       recoveryNotes.add(message);
@@ -525,7 +480,6 @@ export async function runNicheResearch(
           reddit: [...allRawReddit],
           x: [...allRawX],
           web: [...allRawWeb],
-          youtube: [...allRawYouTube],
         },
         finalCandidates: [...finalCandidates],
         trendNews: trendNews ? [...trendNews] : null,
@@ -533,30 +487,37 @@ export async function runNicheResearch(
     });
   }
 
-  completedSteps += 1;
-  emit("validating", "Running competitor scrape pass, evidence confidence, and persona variants...");
-  throwIfAborted(abortSignal);
-
   if (!enriched) {
-    try {
-      const enrichedCandidates = await enrichCandidates({
-        candidates: finalCandidates ?? [],
-        range,
-        mode,
-        signal: abortSignal,
-      });
-      throwIfAborted(abortSignal);
+    completedSteps += 1;
+    const quickModeCanSkipCompetitorStep =
+      mode === "quick" && (finalCandidates ?? []).every((candidate) => candidate.verdict !== "pass");
 
-      addUsage(usageTotals, enrichedCandidates.usage);
-      enriched = enrichedCandidates.items;
-    } catch (error) {
-      if (isAbortLikeError(error) || abortSignal?.aborted) {
-        throw toAbortError(error);
-      }
+    if (quickModeCanSkipCompetitorStep) {
       enriched = [...(finalCandidates ?? [])];
-      const message = `Competitor enrichment degraded (${toRecoveryReason(error)}). Continuing with validated candidates.`;
-      recoveryNotes.add(message);
-      emit("validating", message);
+      recoveryNotes.add("Skipped competitor enrichment in quick mode for non-pass candidates.");
+      emit("validating", "Skipped competitor enrichment for quick-mode watchlist candidates.");
+    } else {
+      emit("validating", "Running competitor intelligence enrichment...");
+
+      try {
+        const enrichedCandidates = await enrichCandidates({
+          candidates: finalCandidates ?? [],
+          range,
+          mode,
+          signal: abortSignal,
+        });
+        throwIfAborted(abortSignal);
+        addUsage(usageTotals, enrichedCandidates.usage);
+        enriched = enrichedCandidates.items;
+      } catch (error) {
+        if (isAbortLikeError(error) || abortSignal?.aborted) {
+          throw toAbortError(error);
+        }
+        enriched = [...(finalCandidates ?? [])];
+        const message = `Competitor enrichment degraded (${toRecoveryReason(error)}). Continuing with validated candidates.`;
+        recoveryNotes.add(message);
+        emit("validating", message);
+      }
     }
 
     await persistCheckpoint({
@@ -570,7 +531,6 @@ export async function runNicheResearch(
           reddit: [...allRawReddit],
           x: [...allRawX],
           web: [...allRawWeb],
-          youtube: [...allRawYouTube],
         },
         finalCandidates: [...(finalCandidates ?? [])],
         enrichedCandidates: [...enriched],
@@ -581,55 +541,14 @@ export async function runNicheResearch(
 
   const readyFinalCandidates = finalCandidates ?? [];
   const readyEnrichedCandidates = enriched ?? readyFinalCandidates;
-
-  completedSteps += 1;
-  emit("validating", "Computing outcome-based ranking and kill criteria...");
-
-  const rankedCandidates = rankCandidatesByOutcomes(readyEnrichedCandidates);
-
-  completedSteps += 1;
-  emit("validating", `Researching latest trend/news for ${niche || "this niche"}...`);
-
   if (!trendNews) {
-    try {
-      const trendTopic = niche || rankedCandidates[0]?.requestedNiche || rankedCandidates[0]?.name || "ai workflow automation";
-      const trendRun = await fetchNicheTrendNews({
-        niche: trendTopic,
-        mode,
-        range,
-        signal: abortSignal,
-      });
-      addUsage(usageTotals, trendRun.usage);
-      trendNews = trendRun.items;
-    } catch (error) {
-      if (isAbortLikeError(error) || abortSignal?.aborted) {
-        throw toAbortError(error);
-      }
-      trendNews = [];
-      const message = `Trend/news lookup degraded (${toRecoveryReason(error)}). Returning results without trend/news.`;
-      recoveryNotes.add(message);
-      emit("validating", message);
-    }
-
-    await persistCheckpoint({
-      resumeKey,
-      checkpoint: {
-        ...checkpoint,
-        completedQueryCount,
-        completedSteps,
-        usageTotals: { ...usageTotals },
-        allRaw: {
-          reddit: [...allRawReddit],
-          x: [...allRawX],
-          web: [...allRawWeb],
-          youtube: [...allRawYouTube],
-        },
-        finalCandidates: [...readyFinalCandidates],
-        enrichedCandidates: [...readyEnrichedCandidates],
-        trendNews: [...trendNews],
-      },
+    trendNews = buildTrendNewsFromEvidence({
+      trendSynthesis: trendSynthesis ?? emptyTrendSynthesis(),
+      evidenceIndex,
     });
   }
+
+  const rankedCandidates = rankCandidatesByOutcomes(readyEnrichedCandidates);
 
   completedSteps += 1;
   emit("complete", "Niche validation complete.");
@@ -644,7 +563,6 @@ export async function runNicheResearch(
       reddit: [...allRawReddit],
       x: [...allRawX],
       web: [...allRawWeb],
-      youtube: [...allRawYouTube],
     },
     finalCandidates: [...readyFinalCandidates],
     enrichedCandidates: [...readyEnrichedCandidates],
@@ -668,6 +586,7 @@ export async function runNicheResearch(
         candidateCount: rankedCandidates.length,
         elapsedMs: Date.now() - startedAt,
         trendNews: trendNews ?? [],
+        trendSynthesis: trendSynthesis ?? emptyTrendSynthesis(),
         error: recoveryMessages.length ? recoveryMessages.join(" ") : undefined,
       },
     ],
@@ -738,7 +657,7 @@ export async function runNicheResearchBatch(
   const errorByNiche = new Map<string, string>();
   const totalStepsByNiche = new Map<string, number>();
   for (const niche of niches) {
-    totalStepsByNiche.set(niche, buildFocusedQueries(niche, mode).length + 5);
+    totalStepsByNiche.set(niche, buildFocusedQueries(niche).length + 4);
     stateByNiche.set(niche, "pending");
   }
 
@@ -816,11 +735,7 @@ export async function runNicheResearchBatch(
             abortSignal,
             onProgress: (event) => {
               progressByNiche.set(niche, event);
-              emitBatchProgress(
-                event.stage,
-                event.message,
-                niche,
-              );
+              emitBatchProgress(event.stage, event.message, niche);
             },
           },
         );
@@ -889,7 +804,7 @@ export async function runNicheResearchBatch(
       id: `${candidate.id}-${toSlug(result.niche).slice(0, 20)}`,
       requestedNiche: candidate.requestedNiche || result.niche,
     })))
-    .filter((candidate) => isLaunchReadyCandidate(candidate));
+    .filter((candidate) => isLaunchReadyCandidate(candidate) || isEvidenceBackedCandidate(candidate));
 
   const dedupedCandidates = rankCandidatesByOutcomes(dedupeCandidates(flattenedCandidates));
 
@@ -918,6 +833,7 @@ export async function runNicheResearchBatch(
       candidateCount: result.status === "completed" ? result.report.candidates.length : 0,
       elapsedMs: result.status === "completed" ? result.report.stats.elapsedMs : 0,
       trendNews: result.status === "completed" ? result.report.runs[0]?.trendNews ?? [] : [],
+      trendSynthesis: result.status === "completed" ? result.report.runs[0]?.trendSynthesis ?? null : null,
       error: result.status === "failed" ? result.error : undefined,
     })),
     stats: {
@@ -934,6 +850,50 @@ export async function runNicheResearchBatch(
   };
 }
 
+function buildFocusedQueries(niche: string) {
+  const normalized = niche.trim();
+  return [
+    `${normalized} latest news updates product launches regulatory changes last 30 days`,
+    `${normalized} emerging trends adoption patterns winning workflows last 30 days`,
+    `${normalized} unresolved complaints failures requests for better tools last 30 days`,
+  ];
+}
+
+function buildDiscoveryQueries() {
+  return [
+    "latest news updates product launches and regulatory changes for AI workflow automation in underserved small-business niches last 30 days",
+    "emerging adoption trends and winning workflow patterns for AI operations software in service-heavy businesses last 30 days",
+    "unresolved complaints failures and requests for better AI tools in operator communities and buyer forums last 30 days",
+  ];
+}
+
+function describeQueryStep({
+  niche,
+  query,
+  index,
+  total,
+}: {
+  niche: string;
+  query: string;
+  index: number;
+  total: number;
+}) {
+  const stepLabel = `Step ${index + 1}/${total}`;
+  const target = niche.trim() || "auto-discovery markets";
+
+  if (index === 0) {
+    return `${stepLabel} • Scanning latest news and updates for ${target}.`;
+  }
+  if (index === 1) {
+    return `${stepLabel} • Mapping emerging trends and adoption patterns for ${target}.`;
+  }
+  if (index === 2) {
+    return `${stepLabel} • Collecting unresolved complaints and unmet requests for ${target}.`;
+  }
+
+  return `${stepLabel} • Running trend query for ${target}: ${query}`;
+}
+
 async function runThreeSourceSearch({
   query,
   mode,
@@ -947,11 +907,10 @@ async function runThreeSourceSearch({
   toDate: string;
   signal?: AbortSignal;
 }) {
-  const [redditResult, xResult, webResult, youtubeResult] = await Promise.allSettled([
+  const [redditResult, xResult, webResult] = await Promise.allSettled([
     searchReddit({ topic: query, depth: mode, fromDate, toDate, signal }),
     searchX({ topic: query, depth: mode, fromDate, toDate, signal }),
     searchWeb({ topic: query, depth: mode, fromDate, toDate, signal }),
-    searchYouTube({ topic: query, depth: mode, fromDate, toDate, signal }),
   ]);
 
   if (signal?.aborted) {
@@ -966,11 +925,10 @@ async function runThreeSourceSearch({
     calls: 0,
   };
 
-  const items: SearchResultShape = {
+  const items = {
     reddit: redditResult.status === "fulfilled" ? redditResult.value.items : [],
     x: xResult.status === "fulfilled" ? xResult.value.items : [],
     web: webResult.status === "fulfilled" ? webResult.value.items : [],
-    youtube: youtubeResult.status === "fulfilled" ? youtubeResult.value.items : [],
   };
 
   if (redditResult.status === "fulfilled") {
@@ -982,11 +940,158 @@ async function runThreeSourceSearch({
   if (webResult.status === "fulfilled") {
     addUsage(usage, { ...webResult.value.usage, calls: 1 });
   }
-  if (youtubeResult.status === "fulfilled") {
-    addUsage(usage, { ...youtubeResult.value.usage, calls: 1 });
-  }
 
   return { items, usage };
+}
+
+async function synthesizeTrendEvidence({
+  niche,
+  range,
+  evidenceIndex,
+  signal,
+}: {
+  niche: string;
+  range: { from: string; to: string };
+  evidenceIndex: EvidenceIndex;
+  signal?: AbortSignal;
+}) {
+  const model = process.env.OPENROUTER_SYNTH_MODEL ?? TREND_SYNTH_MODEL_DEFAULT;
+
+  const prompt = `You are synthesizing the latest 30-day evidence for an AI product opportunity explorer.
+
+Niche context: ${niche}
+Date window: ${range.from} to ${range.to}
+
+Reddit evidence:
+${compactEvidenceByType(evidenceIndex, "reddit")}
+
+X evidence:
+${compactEvidenceByType(evidenceIndex, "x")}
+
+Web evidence:
+${compactEvidenceByType(evidenceIndex, "web")}
+
+Return strict JSON:
+{
+  "summary": "string",
+  "keyTrends": ["string"],
+  "unresolvedIssues": ["string"],
+  "opportunityGaps": ["string"],
+  "citations": [
+    {
+      "claim": "string",
+      "sourceUrl": "https://...",
+      "date": "YYYY-MM-DD or null",
+      "sourceType": "reddit|x|web"
+    }
+  ]
+}
+
+Rules:
+- Use only source URLs present in provided evidence.
+- Keep citations to max 12.
+- Output JSON only.`;
+
+  const response = await openRouterRequest<ChatCompletionResponse>({
+    path: "/chat/completions",
+    payload: {
+      model,
+      messages: [
+        {
+          role: "system",
+          content: "You are a rigorous research synthesis analyst. Use only provided evidence. Return strict JSON.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 1800,
+      response_format: { type: "json_object" },
+    },
+    timeoutMs: 90000,
+    signal,
+  });
+
+  const raw = response.choices?.[0]?.message?.content ?? "";
+  const parsed = extractJsonObject<RawTrendSynthesis>(raw);
+
+  const synthesis: NicheTrendSynthesis = {
+    summary: toSafeString(parsed?.summary, "No synthesis summary generated."),
+    keyTrends: toStringArray(parsed?.keyTrends, 8),
+    unresolvedIssues: toStringArray(parsed?.unresolvedIssues, 8),
+    opportunityGaps: toStringArray(parsed?.opportunityGaps, 8),
+    citations: normalizeProofPoints(parsed?.citations, evidenceIndex),
+  };
+
+  return {
+    synthesis,
+    usage: {
+      ...extractUsage(response as unknown as Record<string, unknown>),
+      calls: 1,
+      model,
+    },
+  };
+}
+
+function emptyTrendSynthesis(): NicheTrendSynthesis {
+  return {
+    summary: "Trend synthesis unavailable.",
+    keyTrends: [],
+    unresolvedIssues: [],
+    opportunityGaps: [],
+    citations: [],
+  };
+}
+
+function isWeakTrendSynthesis(value: NicheTrendSynthesis) {
+  const summary = value.summary.trim().toLowerCase();
+  const placeholder =
+    !summary ||
+    summary === "no synthesis summary generated." ||
+    summary === "trend synthesis unavailable.";
+
+  return placeholder || value.citations.length < 3 || (!value.keyTrends.length && !value.unresolvedIssues.length);
+}
+
+function buildHeuristicTrendSynthesis({
+  niche,
+  evidenceIndex,
+  range,
+}: {
+  niche: string;
+  evidenceIndex: EvidenceIndex;
+  range: { from: string; to: string };
+}): NicheTrendSynthesis {
+  const refs = evidenceIndex.refs.slice(0, 18);
+  if (!refs.length) {
+    return emptyTrendSynthesis();
+  }
+
+  const keyTrends = extractThemesFromHeadlines(refs.map((item) => item.headline), 5);
+  const unresolvedIssues = extractIssueSignals(refs).slice(0, 5);
+  const opportunityGaps = unresolvedIssues.map((issue) => `AI workflow opportunity: ${issue}`).slice(0, 5);
+  const citations = refs.slice(0, 8).map((item) => ({
+    claim: item.headline,
+    sourceUrl: item.url,
+    date: item.date,
+    sourceType: item.sourceType,
+  }));
+
+  const sourceBreakdown = [
+    `Reddit ${refs.filter((item) => item.sourceType === "reddit").length}`,
+    `X ${refs.filter((item) => item.sourceType === "x").length}`,
+    `Web ${refs.filter((item) => item.sourceType === "web").length}`,
+  ].join(", ");
+
+  return {
+    summary: `Heuristic synthesis for ${niche}: ${refs.length} evidence signals (${sourceBreakdown}) in ${range.from} to ${range.to} indicate demand around ${keyTrends.join(", ") || "workflow automation pain points"}.`,
+    keyTrends: keyTrends.length ? keyTrends : ["Growing requests for better workflow tooling"],
+    unresolvedIssues: unresolvedIssues.length ? unresolvedIssues : ["Manual workflows remain error-prone and slow."],
+    opportunityGaps: opportunityGaps.length ? opportunityGaps : ["AI copilots for high-friction operational tasks"],
+    citations,
+  };
 }
 
 async function generateValidatedCandidates({
@@ -997,7 +1102,7 @@ async function generateValidatedCandidates({
   reddit,
   x,
   web,
-  youtube,
+  trendSynthesis,
   retryMode = false,
   signal,
 }: {
@@ -1008,21 +1113,20 @@ async function generateValidatedCandidates({
   reddit: RedditItem[];
   x: XItem[];
   web: WebItem[];
-  youtube: YouTubeItem[];
+  trendSynthesis: NicheTrendSynthesis;
   retryMode?: boolean;
   signal?: AbortSignal;
 }) {
   const model = process.env.OPENROUTER_NICHE_MODEL ?? VALIDATE_MODEL_DEFAULT;
-  const maxTokens = retryMode ? MODE_CONFIG[mode].validateMaxTokens + 1400 : MODE_CONFIG[mode].validateMaxTokens;
+  const maxTokens = retryMode ? MODE_CONFIG[mode].validateMaxTokens + 1200 : MODE_CONFIG[mode].validateMaxTokens;
   const prompt = buildValidationPrompt({
     niche,
-    mode,
     range,
     candidateCount,
     reddit,
     x,
     web,
-    youtube,
+    trendSynthesis,
     retryMode,
   });
 
@@ -1051,9 +1155,10 @@ async function generateValidatedCandidates({
 
   const raw = response.choices?.[0]?.message?.content ?? "";
   const parsed = extractJsonObject<RawCandidatesOutput>(raw);
+  const looseItems = extractLooseCandidates(raw);
 
   return {
-    items: Array.isArray(parsed?.candidates) ? parsed.candidates : [],
+    items: Array.isArray(parsed?.candidates) ? parsed.candidates : looseItems,
     usage: {
       ...extractUsage(response as unknown as Record<string, unknown>),
       calls: 1,
@@ -1061,48 +1166,91 @@ async function generateValidatedCandidates({
   };
 }
 
+function extractLooseCandidates(raw: string): RawNicheCandidate[] {
+  const text = raw.trim();
+  if (!text) {
+    return [];
+  }
+
+  const candidatesArrayIndex = text.indexOf('"candidates"');
+  if (candidatesArrayIndex !== -1) {
+    const bracketStart = text.indexOf("[", candidatesArrayIndex);
+    const bracketEnd = text.lastIndexOf("]");
+    if (bracketStart !== -1 && bracketEnd > bracketStart) {
+      const slice = text.slice(bracketStart, bracketEnd + 1);
+      try {
+        const parsed = JSON.parse(slice) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed as RawNicheCandidate[];
+        }
+      } catch {
+        // Continue to fallback parsing below.
+      }
+    }
+  }
+
+  const firstArray = text.indexOf("[");
+  const lastArray = text.lastIndexOf("]");
+  if (firstArray !== -1 && lastArray > firstArray) {
+    try {
+      const parsed = JSON.parse(text.slice(firstArray, lastArray + 1)) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed as RawNicheCandidate[];
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 function buildValidationPrompt({
   niche,
-  mode,
   range,
   candidateCount,
   reddit,
   x,
   web,
-  youtube,
+  trendSynthesis,
   retryMode,
 }: {
   niche: string;
-  mode: NicheResearchDepth;
   range: { from: string; to: string };
   candidateCount: number;
   reddit: RedditItem[];
   x: XItem[];
   web: WebItem[];
-  youtube: YouTubeItem[];
+  trendSynthesis: NicheTrendSynthesis;
   retryMode: boolean;
 }) {
   const scope = niche
     ? `User niche focus: ${niche}. Propose validated sub-niches or specific slices within this market.`
-    : "No niche provided. Discover any niches in the evidence that pass all three checks.";
+    : "No niche provided. Discover validated niches from the evidence.";
 
   return `Date window is fixed: ${range.from} to ${range.to} (inclusive). Use only the evidence below.
-Research depth: ${mode}.
 ${scope}
 
+Trend synthesis:
+- Summary: ${trendSynthesis.summary}
+- Key trends: ${trendSynthesis.keyTrends.join(" | ") || "none"}
+- Unresolved issues: ${trendSynthesis.unresolvedIssues.join(" | ") || "none"}
+- Opportunity gaps: ${trendSynthesis.opportunityGaps.join(" | ") || "none"}
+- Synthesis citations:
+${trendSynthesis.citations.map((item) => `  - ${item.sourceType} ${item.claim} (${item.sourceUrl})`).join("\n") || "  - none"}
+
 Goal:
-- Return up to ${candidateCount} niches that pass ALL three checks.
-- If none pass, return {"candidates": []}.
-- Every candidate should be a business-ready idea dossier, not a brief summary.
-- Include personaVariants for: agency-owner, operator, founder.
-- Include killCriteria that indicate when to stop pursuing the idea if validation is weak.
+- Return up to ${candidateCount} evidence-backed AI product ideas.
+- Every idea must include 3-5 proofPoints with sourceUrl values found in the evidence below.
+- Every idea must map unresolved issue -> proposed AI solution explicitly.
+- Fill all check fields and set passed booleans conservatively based on evidence.
 
 Checks:
 1) Spending: evidence that buyers spend >= $500/year on this problem via consultants, courses, or tools.
 2) Pain: recurring complaint appears 3+ times.
 3) Room: active launch community with under 50k members and real engagement.
 
-${retryMode ? "Retry mode: infer conservative but concrete estimates from provided evidence when exact values are missing; still require all three checks to pass." : "Use strict evidence extraction from provided items."}
+${retryMode ? "Retry mode: infer conservative but concrete estimates from provided evidence when exact values are missing." : "Use strict evidence extraction from provided items."}
 
 Reddit evidence:
 ${compactReddit(reddit)}
@@ -1113,111 +1261,40 @@ ${compactX(x)}
 Web evidence:
 ${compactWeb(web)}
 
-YouTube evidence:
-${compactYouTube(youtube)}
-
 Return strict JSON:
 {
   "candidates": [
     {
-      "name": "string",
-      "problemStatement": "string",
-      "oneLiner": "string",
-      "aiBuildAngle": "string",
-      "icp": "string",
-      "audience": "string",
-      "whyNow": "string",
-      "recommendation": "string",
+      "name": "short specific product name",
+      "problemStatement": "specific unresolved pain",
+      "oneLiner": "solution in one line",
+      "aiBuildAngle": "how AI solves this better",
+      "icp": "ideal customer",
+      "audience": "target audience",
+      "whyNow": "why this is urgent now",
+      "recommendation": "launch recommendation",
       "score": 0,
-      "verdict": "pass",
-      "demand": {
-        "trendSummary": "string",
-        "urgencyDrivers": ["string"],
-        "buyingSignals": ["string"],
-        "searchKeywords": ["string"]
-      },
-      "landscape": {
-        "competitionLevel": "low|medium|high",
-        "incumbentTypes": ["string"],
-        "whitespace": ["string"],
-        "beachheadWedge": "string"
-      },
-      "businessModel": {
-        "pricingModel": "string",
-        "priceAnchor": "string",
-        "timeToFirstDollar": "string",
-        "expectedGrossMargin": "string"
-      },
-      "goToMarket": {
-        "channels": ["string"],
-        "offerHook": "string",
-        "salesMotion": "string",
-        "retentionLoop": "string"
-      },
-      "execution": {
-        "buildComplexity": "low|medium|high",
-        "stackRecommendation": "string",
-        "mvpScope": ["string"],
-        "automationLevers": ["string"],
-        "moatLevers": ["string"]
-      },
-      "outcomes": {
-        "timeToFirstDollarDays": 45,
-        "gtmDifficulty": 1,
-        "integrationComplexity": 1
-      },
-      "personaVariants": [
-        {
-          "persona": "agency-owner|operator|founder",
-          "primaryPain": "string",
-          "offerVariant": "string",
-          "pricingAngle": "string",
-          "bestChannel": "string"
-        }
+      "verdict": "pass|watch|fail",
+      "proofPoints": [
+        { "claim": "string", "sourceUrl": "https://...", "date": "YYYY-MM-DD or null", "sourceType": "reddit|x|web" }
       ],
-      "validationPlan": [
-        {
-          "experiment": "string",
-          "successMetric": "string",
-          "effort": "low|medium|high"
-        }
-      ],
+      "validationPlan": [{ "experiment": "string", "successMetric": "string", "effort": "low|medium|high" }],
       "risks": ["string"],
-      "killCriteria": ["string"],
       "checks": {
         "spending": {
           "passed": true,
           "estimatedAnnualSpendUsd": 0,
           "thresholdUsd": 500,
           "evidence": ["string"],
-          "claims": [
-            {
-              "claim": "string",
-              "confidence": "high|med|low",
-              "sourceUrl": "https://..."
-            }
-          ],
-          "offerings": [
-            {
-              "title": "string",
-              "priceText": "string",
-              "annualPriceUsd": 0,
-              "url": "https://..."
-            }
-          ]
+          "claims": [{ "claim": "string", "confidence": "high|med|low", "sourceUrl": "https://..." }],
+          "offerings": [{ "title": "string", "priceText": "string", "annualPriceUsd": 0, "url": "https://..." }]
         },
         "pain": {
           "passed": true,
           "recurringComplaintCount": 0,
           "complaintThemes": ["string"],
           "evidence": ["string"],
-          "claims": [
-            {
-              "claim": "string",
-              "confidence": "high|med|low",
-              "sourceUrl": "https://..."
-            }
-          ]
+          "claims": [{ "claim": "string", "confidence": "high|med|low", "sourceUrl": "https://..." }]
         },
         "room": {
           "passed": true,
@@ -1226,24 +1303,12 @@ Return strict JSON:
           "members": 0,
           "engagementSignal": "string",
           "evidence": ["string"],
-          "claims": [
-            {
-              "claim": "string",
-              "confidence": "high|med|low",
-              "sourceUrl": "https://..."
-            }
-          ],
+          "claims": [{ "claim": "string", "confidence": "high|med|low", "sourceUrl": "https://..." }],
           "url": "https://..."
         }
       },
       "sources": [
-        {
-          "title": "string",
-          "url": "https://...",
-          "note": "string",
-          "type": "spending|pain|room|general",
-          "date": "YYYY-MM-DD"
-        }
+        { "title": "string", "url": "https://...", "note": "string", "type": "spending|pain|room|general", "date": "YYYY-MM-DD" }
       ]
     }
   ]
@@ -1252,10 +1317,10 @@ Return strict JSON:
 Rules:
 - JSON only.
 - Use only URLs present in evidence above.
-- source.date must be between ${range.from} and ${range.to}.
+- proofPoints length must be >= 3.
+- source.date must be between ${range.from} and ${range.to} when date exists.
 - confidence must be one of: high, med, low.
-- gtmDifficulty and integrationComplexity use scale 1 (easy) to 10 (hard).
-- Do not output candidates that fail any check.`;
+- Prefer strongest opportunities first and keep checks evidence-aligned.`;
 }
 
 function compactReddit(items: RedditItem[]) {
@@ -1299,116 +1364,12 @@ function compactWeb(items: WebItem[]) {
     .join("\n");
 }
 
-function compactYouTube(items: YouTubeItem[]) {
-  if (!items.length) {
-    return "- none";
-  }
-
-  return items
-    .slice(0, 24)
-    .map((item) => {
-      const views = item.engagement?.views ?? 0;
-      const likes = item.engagement?.likes ?? 0;
-      return `- [${item.date ?? "unknown"}] [views:${views} likes:${likes}] ${item.channel} ${item.title} (${item.url})`;
-    })
-    .join("\n");
-}
-
-function describeQueryStep({
-  niche,
-  query,
-  index,
-  total,
-}: {
-  niche: string;
-  query: string;
-  index: number;
-  total: number;
-}) {
-  const normalizedNiche = niche.trim();
-  const normalizedQuery = query.trim();
-  const stepLabel = `Step ${index + 1}/${total}`;
-
-  if (normalizedQuery === normalizedNiche) {
-    return `${stepLabel} • Searching across Reddit, X, Web, and YouTube for buildable AI businesses in ${normalizedNiche}.`;
-  }
-
-  if (normalizedQuery.includes("consultant tool course pricing complaints community")) {
-    return `${stepLabel} • Combing through results for ${normalizedNiche} consultant tools, courses, pricing, complaints, and communities.`;
-  }
-
-  if (normalizedQuery.endsWith("switching from")) {
-    return `${stepLabel} • Finding switch intent and migration pain in ${normalizedNiche} workflows.`;
-  }
-
-  if (normalizedQuery.endsWith("alternatives too expensive")) {
-    return `${stepLabel} • Looking for pricing frustration and willingness-to-pay signals in ${normalizedNiche}.`;
-  }
-
-  if (normalizedQuery.endsWith("manual workaround spreadsheet")) {
-    return `${stepLabel} • Detecting manual spreadsheet workarounds that can be automated in ${normalizedNiche}.`;
-  }
-
-  if (normalizedQuery.endsWith("hiring VA for")) {
-    return `${stepLabel} • Identifying tasks in ${normalizedNiche} where teams hire VAs instead of software.`;
-  }
-
-  if (normalizedQuery.endsWith("implementation pain onboarding")) {
-    return `${stepLabel} • Mapping onboarding and implementation friction in ${normalizedNiche} tools.`;
-  }
-
-  if (normalizedQuery.endsWith("churn reasons")) {
-    return `${stepLabel} • Extracting churn reasons and retention gaps in ${normalizedNiche} products.`;
-  }
-
-  if (normalizedQuery.endsWith("done for you service")) {
-    return `${stepLabel} • Capturing demand for done-for-you alternatives in ${normalizedNiche}.`;
-  }
-
-  if (normalizedQuery.endsWith("agency process bottleneck")) {
-    return `${stepLabel} • Surfacing agency bottlenecks and repeatable automations in ${normalizedNiche}.`;
-  }
-
-  if (normalizedQuery.endsWith("no code automation request")) {
-    return `${stepLabel} • Finding explicit no-code automation requests in ${normalizedNiche} communities.`;
-  }
-
-  if (normalizedQuery.endsWith("community asking for template/tool")) {
-    return `${stepLabel} • Spotting template/tool requests from active ${normalizedNiche} communities.`;
-  }
-
-  return `${stepLabel} • Searching multi-source signals for ${normalizedNiche}: ${normalizedQuery}.`;
-}
-
-function buildFocusedQueries(niche: string, mode: NicheResearchDepth) {
-  const extraQueries = EXTRA_FOCUSED_QUERY_SUFFIXES.map((suffix) => `${niche} ${suffix}`);
-
-  if (mode === "quick") {
-    return [
-      niche,
-      `${niche} consultant tool course pricing complaints community`,
-      ...extraQueries.slice(0, 4),
-    ];
-  }
-
-  if (mode === "default") {
-    return [
-      niche,
-      `${niche} consultant tool course pricing complaints community`,
-      ...extraQueries,
-    ];
-  }
-
-  return [
-    niche,
-    `${niche} consultant tool course pricing complaints community`,
-    ...extraQueries,
-    `${niche} frustrated wish there was looking for reddit discord forum`,
-    `${niche} implementation pain onboarding integrations`,
-  ];
-}
-
-function normalizeCandidate(raw: RawNicheCandidate, index: number, requestedNiche: string | null): NicheCandidate {
+function normalizeCandidate(
+  raw: RawNicheCandidate,
+  index: number,
+  requestedNiche: string | null,
+  evidenceIndex: EvidenceIndex,
+): NicheCandidate {
   const name = toSafeString(raw.name, `Niche ${index + 1}`);
 
   const thresholdUsd = Math.max(500, toNullableNumber(raw.checks?.spending?.thresholdUsd) ?? 500);
@@ -1419,27 +1380,47 @@ function normalizeCandidate(raw: RawNicheCandidate, index: number, requestedNich
   const hasPriceSignal =
     (spendingEstimate !== null && spendingEstimate >= thresholdUsd) ||
     offerings.some((offering) => (offering.annualPriceUsd ?? 0) >= thresholdUsd);
-  const spendingPassed = toBoolean(raw.checks?.spending?.passed) && spendingEvidence.length > 0 && hasPriceSignal;
+  const spendingRawPassed = toBoolean(raw.checks?.spending?.passed);
+  const spendingPassed =
+    spendingRawPassed ||
+    (hasPriceSignal && (spendingEvidence.length > 0 || spendingClaims.length > 0 || offerings.length > 0));
 
   const painEvidence = toStringArray(raw.checks?.pain?.evidence, 8);
   const painClaims = normalizeEvidenceClaims(raw.checks?.pain?.claims, raw.checks?.pain?.evidence, "pain");
-  const recurringComplaintCount = toNullableNumber(raw.checks?.pain?.recurringComplaintCount) ?? 0;
+  const recurringComplaintCount = Math.max(
+    toNullableNumber(raw.checks?.pain?.recurringComplaintCount) ?? 0,
+    painEvidence.length,
+    painClaims.length,
+  );
   const complaintThemes = toStringArray(raw.checks?.pain?.complaintThemes, 8);
-  const painPassed = toBoolean(raw.checks?.pain?.passed) && recurringComplaintCount >= 3 && painEvidence.length > 0 && complaintThemes.length > 0;
+  const painRawPassed = toBoolean(raw.checks?.pain?.passed);
+  const painPassed =
+    painRawPassed ||
+    (recurringComplaintCount >= 3 && (painEvidence.length > 0 || painClaims.length > 0 || complaintThemes.length > 0));
 
   const roomEvidence = toStringArray(raw.checks?.room?.evidence, 8);
   const roomClaims = normalizeEvidenceClaims(raw.checks?.room?.claims, raw.checks?.room?.evidence, "room");
   const communityMembers = toNullableNumber(raw.checks?.room?.members);
-  const roomUrl = toSafeString(raw.checks?.room?.url, "");
+  const roomUrlRaw = toSafeString(raw.checks?.room?.url, "");
+  const roomUrlMatch = resolveEvidenceReference(roomUrlRaw, evidenceIndex);
+  const roomUrl = roomUrlMatch?.url ?? (hasValidUrl(roomUrlRaw) ? roomUrlRaw : "");
   const engagementSignal = toSafeString(raw.checks?.room?.engagementSignal, "");
+  const inferredEngagementSignal = engagementSignal || roomEvidence[0] || roomClaims[0]?.claim || "";
+  const roomRawPassed = toBoolean(raw.checks?.room?.passed);
+  const hasCommunitySignal = roomEvidence.length > 0 || roomClaims.length > 0 || hasValidUrl(roomUrl);
+  const memberBoundsOk = communityMembers === null || (communityMembers > 0 && communityMembers < 50000);
   const roomPassed =
-    toBoolean(raw.checks?.room?.passed) &&
-    roomEvidence.length > 0 &&
-    hasValidUrl(roomUrl) &&
-    Boolean(engagementSignal) &&
-    (communityMembers === null || (communityMembers > 0 && communityMembers < 50000));
+    roomRawPassed ||
+    (hasCommunitySignal && memberBoundsOk && Boolean(inferredEngagementSignal));
 
   const passCount = [spendingPassed, painPassed, roomPassed].filter(Boolean).length;
+  const sources = normalizeSources(raw.sources, evidenceIndex);
+  const proofPoints = hydrateProofPoints({
+    baseProofPoints: normalizeProofPoints(raw.proofPoints, evidenceIndex),
+    sources,
+    claims: [...spendingClaims, ...painClaims, ...roomClaims],
+    evidenceIndex,
+  });
 
   return {
     id: createCandidateId(name, index),
@@ -1454,6 +1435,7 @@ function normalizeCandidate(raw: RawNicheCandidate, index: number, requestedNich
     recommendation: toSafeString(raw.recommendation, ""),
     score: clampScore(raw.score),
     verdict: normalizeVerdict(raw.verdict, passCount),
+    proofPoints,
     demand: {
       trendSummary: toSafeString(raw.demand?.trendSummary, "Demand signal exists but requires targeted validation."),
       urgencyDrivers: toStringArray(raw.demand?.urgencyDrivers, 6),
@@ -1512,14 +1494,60 @@ function normalizeCandidate(raw: RawNicheCandidate, index: number, requestedNich
         communityName: toSafeString(raw.checks?.room?.communityName, "Unknown community"),
         platform: toSafeString(raw.checks?.room?.platform, "Community"),
         members: communityMembers,
-        engagementSignal: engagementSignal || "No engagement signal provided.",
+        engagementSignal: inferredEngagementSignal || "No engagement signal provided.",
         evidence: roomEvidence,
         claims: roomClaims,
         url: roomUrl,
       },
     },
-    sources: normalizeSources(raw.sources),
+    sources,
   };
+}
+
+function normalizeProofPoints(value: unknown, evidenceIndex: EvidenceIndex) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const typed = item as RawProofPoint;
+      const inputSourceUrl = toSafeString(typed.sourceUrl, "");
+      const match = resolveEvidenceReference(inputSourceUrl, evidenceIndex);
+      if (!match) {
+        return null;
+      }
+
+      const sourceType = typed.sourceType === "reddit" || typed.sourceType === "x" || typed.sourceType === "web"
+        ? typed.sourceType
+        : match.sourceType;
+
+      const claim = toSafeString(typed.claim, "");
+      if (!claim) {
+        return null;
+      }
+
+      const key = `${claim.toLowerCase()}|${match.url}`;
+      if (seen.has(key)) {
+        return null;
+      }
+      seen.add(key);
+
+      return {
+        claim,
+        sourceUrl: match.url,
+        date: toNullableDateString(typed.date) ?? match.date,
+        sourceType,
+      } satisfies NicheProofPoint;
+    })
+    .filter((item): item is NicheProofPoint => Boolean(item))
+    .slice(0, 12);
 }
 
 function normalizeOfferings(value: unknown) {
@@ -1559,10 +1587,12 @@ function normalizeOfferings(value: unknown) {
     .slice(0, 8);
 }
 
-function normalizeSources(value: unknown) {
+function normalizeSources(value: unknown, evidenceIndex: EvidenceIndex): NicheSource[] {
   if (!Array.isArray(value)) {
     return [];
   }
+
+  const seen = new Set<string>();
 
   return value
     .map((item) => {
@@ -1578,26 +1608,107 @@ function normalizeSources(value: unknown) {
         date?: unknown;
       };
 
-      const url = toSafeString(typed.url, "");
-      if (!hasValidUrl(url)) {
+      const rawUrl = toSafeString(typed.url, "");
+      const match = resolveEvidenceReference(rawUrl, evidenceIndex);
+      if (!match) {
         return null;
       }
+      const url = match.url;
 
-      const sourceType: NicheCandidate["sources"][number]["type"] =
+      const sourceType: NicheSource["type"] =
         typed.type === "spending" || typed.type === "pain" || typed.type === "room" || typed.type === "general"
           ? typed.type
           : "general";
+
+      if (seen.has(url)) {
+        return null;
+      }
+      seen.add(url);
 
       return {
         title: toSafeString(typed.title, "Source"),
         url,
         note: toSafeString(typed.note, ""),
         type: sourceType,
-        date: toNullableDateString(typed.date),
+        date: toNullableDateString(typed.date) ?? match.date,
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .slice(0, 18);
+}
+
+function hydrateProofPoints({
+  baseProofPoints,
+  sources,
+  claims,
+  evidenceIndex,
+}: {
+  baseProofPoints: NicheProofPoint[];
+  sources: NicheSource[];
+  claims: Array<{ claim: string; sourceUrl?: string }>;
+  evidenceIndex: EvidenceIndex;
+}) {
+  const output: NicheProofPoint[] = [];
+  const seen = new Set<string>();
+
+  const push = (item: NicheProofPoint | null) => {
+    if (!item) {
+      return;
+    }
+    const key = `${item.claim.toLowerCase()}|${item.sourceUrl}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    output.push(item);
+  };
+
+  for (const item of baseProofPoints) {
+    push(item);
+  }
+
+  for (const claim of claims) {
+    if (!claim.claim || !claim.sourceUrl) {
+      continue;
+    }
+    const match = resolveEvidenceReference(claim.sourceUrl, evidenceIndex);
+    if (!match) {
+      continue;
+    }
+    push({
+      claim: claim.claim,
+      sourceUrl: match.url,
+      date: match.date,
+      sourceType: match.sourceType,
+    });
+  }
+
+  for (const source of sources) {
+    const match = resolveEvidenceReference(source.url, evidenceIndex);
+    if (!match) {
+      continue;
+    }
+    push({
+      claim: source.note || source.title,
+      sourceUrl: match.url,
+      date: source.date ?? match.date,
+      sourceType: match.sourceType,
+    });
+  }
+
+  for (const ref of evidenceIndex.refs) {
+    if (output.length >= 3) {
+      break;
+    }
+    push({
+      claim: ref.headline,
+      sourceUrl: ref.url,
+      date: ref.date,
+      sourceType: ref.sourceType,
+    });
+  }
+
+  return output.slice(0, 12);
 }
 
 function normalizeEvidenceClaims(
@@ -1789,7 +1900,20 @@ function normalizeEffort(value: unknown): NicheCandidate["validationPlan"][numbe
 }
 
 function isLaunchReadyCandidate(candidate: NicheCandidate) {
-  return candidate.checks.spending.passed && candidate.checks.pain.passed && candidate.checks.room.passed;
+  return (
+    candidate.checks.spending.passed &&
+    candidate.checks.pain.passed &&
+    candidate.checks.room.passed &&
+    candidate.proofPoints.length >= 3
+  );
+}
+
+function isEvidenceBackedCandidate(candidate: NicheCandidate) {
+  return candidate.proofPoints.length >= 3 && countPassedChecks(candidate) >= 2;
+}
+
+function countPassedChecks(candidate: NicheCandidate) {
+  return [candidate.checks.spending.passed, candidate.checks.pain.passed, candidate.checks.room.passed].filter(Boolean).length;
 }
 
 function dedupeCandidates(candidates: NicheCandidate[]) {
@@ -1797,15 +1921,33 @@ function dedupeCandidates(candidates: NicheCandidate[]) {
   const result: NicheCandidate[] = [];
 
   for (const candidate of candidates) {
-    const key = `${candidate.requestedNiche ?? "global"}|${candidate.name.toLowerCase().trim()}`;
-    if (!key || seen.has(key)) {
+    const keys = [
+      `${candidate.requestedNiche ?? "global"}|${candidate.name.toLowerCase().trim()}`,
+      candidateSimilarityKey(candidate),
+    ];
+
+    if (keys.some((key) => seen.has(key))) {
       continue;
     }
-    seen.add(key);
+
+    for (const key of keys) {
+      seen.add(key);
+    }
     result.push(candidate);
   }
 
   return result;
+}
+
+function candidateSimilarityKey(candidate: NicheCandidate) {
+  const normalizedProblem = candidate.problemStatement.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const proofUrls = candidate.proofPoints
+    .map((item) => canonicalizeUrl(item.sourceUrl) ?? item.sourceUrl)
+    .sort()
+    .slice(0, 3)
+    .join("|");
+
+  return `${candidate.requestedNiche ?? "global"}|${normalizedProblem.slice(0, 160)}|${proofUrls}`;
 }
 
 async function enrichCandidates({
@@ -1867,7 +2009,7 @@ async function scrapeCompetitors(
   signal?: AbortSignal,
 ) {
   const model = process.env.OPENROUTER_WEB_MODEL ?? COMPETITOR_MODEL_DEFAULT;
-  const maxCompetitors = mode === "quick" ? 3 : mode === "default" ? 4 : 5;
+  const maxCompetitors = mode === "quick" ? 2 : mode === "default" ? 4 : 5;
   const prompt = `Research direct competitors for this niche and return structured JSON.
 
 Niche idea: ${candidate.name}
@@ -1926,245 +2068,384 @@ Rules:
   };
 }
 
-async function fetchNicheTrendNews({
-  niche,
-  mode,
-  range,
-  signal,
-}: {
-  niche: string;
-  mode: NicheResearchDepth;
-  range: { from: string; to: string };
-  signal?: AbortSignal;
-}) {
-  const model = process.env.OPENROUTER_WEB_MODEL ?? COMPETITOR_MODEL_DEFAULT;
-  const maxItems = mode === "quick" ? 3 : mode === "deep" ? 7 : 5;
-  const safetyTimeoutMs = getTrendNewsSafetyTimeoutMs();
+function compactEvidenceByType(evidenceIndex: EvidenceIndex, sourceType: EvidenceReference["sourceType"]) {
+  const lines = evidenceIndex.refs
+    .filter((item) => item.sourceType === sourceType)
+    .slice(0, 24)
+    .map((item) => `- [${item.date ?? "unknown"}] ${item.headline} (${item.url})`);
 
-  try {
-    return await runTrendNewsAttempt({
-      niche,
-      range,
-      model,
-      maxItems,
-      timeoutMs: safetyTimeoutMs,
-      signal,
-      compact: false,
-    });
-  } catch (error) {
-    if (isAbortLikeError(error) || signal?.aborted || !isRetryableTrendError(error)) {
-      throw error;
-    }
-
-    const fallbackMaxItems = Math.max(2, maxItems - 2);
-    return runTrendNewsAttempt({
-      niche,
-      range,
-      model,
-      maxItems: fallbackMaxItems,
-      timeoutMs: safetyTimeoutMs,
-      signal,
-      compact: true,
-    });
+  if (!lines.length) {
+    return "- none";
   }
+
+  return lines.join("\n");
 }
 
-async function runTrendNewsAttempt({
-  niche,
-  range,
-  model,
-  maxItems,
-  timeoutMs,
-  signal,
-  compact,
+function createEvidenceIndex({
+  reddit,
+  x,
+  web,
 }: {
-  niche: string;
-  range: { from: string; to: string };
-  model: string;
-  maxItems: number;
-  timeoutMs: number | null;
-  signal?: AbortSignal;
-  compact: boolean;
-}) {
-  const prompt = buildTrendNewsPrompt({
-    niche,
-    range,
-    maxItems,
-    compact,
-  });
+  reddit: RedditItem[];
+  x: XItem[];
+  web: WebItem[];
+}): EvidenceIndex {
+  const refs: EvidenceReference[] = [];
+  const byMatchKey = new Map<string, EvidenceReference>();
 
-  const response = await openRouterRequest<OpenRouterResponsesResponse>({
-    path: "/responses",
-    payload: {
-      model,
-      tools: [{ type: "web_search" }],
-      input: [{ role: "user", content: prompt }],
-    },
-    timeoutMs,
-    signal,
-  });
+  const pushRef = (ref: EvidenceReference) => {
+    refs.push(ref);
+    for (const key of buildUrlMatchKeys(ref.url)) {
+      if (!byMatchKey.has(key)) {
+        byMatchKey.set(key, ref);
+      }
+    }
+  };
 
-  const text = extractTextFromOpenRouterResponse(response as Record<string, unknown>);
-  const parsed = extractJsonObject<RawTrendNewsOutput>(text);
-  const items = normalizeTrendNews(parsed?.items, maxItems);
+  for (const item of reddit) {
+    if (!hasValidUrl(item.url)) {
+      continue;
+    }
+    pushRef({
+      sourceType: "reddit",
+      url: item.url,
+      date: toNullableDateString(item.date),
+      headline: toSafeString(item.title, "Reddit trend signal"),
+    });
+  }
+
+  for (const item of x) {
+    if (!hasValidUrl(item.url)) {
+      continue;
+    }
+    pushRef({
+      sourceType: "x",
+      url: item.url,
+      date: toNullableDateString(item.date),
+      headline: toSafeString(item.text, "X trend signal"),
+    });
+  }
+
+  for (const item of web) {
+    if (!hasValidUrl(item.url)) {
+      continue;
+    }
+    pushRef({
+      sourceType: "web",
+      url: item.url,
+      date: toNullableDateString(item.date),
+      headline: toSafeString(item.title, "Web trend signal"),
+    });
+  }
 
   return {
-    items,
-    usage: {
-      ...extractUsage(response as Record<string, unknown>),
-      calls: 1,
-    },
+    refs,
+    byMatchKey,
   };
 }
 
-function buildTrendNewsPrompt({
-  niche,
-  range,
-  maxItems,
-  compact,
-}: {
-  niche: string;
-  range: { from: string; to: string };
-  maxItems: number;
-  compact: boolean;
-}) {
-  return `Find the latest trend/news updates for this niche and return structured JSON.
-
-Niche: ${niche}
-Date window preference: ${range.from} to ${range.to}
-
-Return strict JSON:
-{
-  "items": [
-    {
-      "title": "string",
-      "url": "https://...",
-      "summary": "string",
-      "whyItMatters": "string",
-      "date": "YYYY-MM-DD or null",
-      "confidence": "high|med|low"
-    }
-  ]
-}
-
-Rules:
-- Prioritize the most recent and credible sources.
-- Max ${maxItems} items.${compact ? "\n- Keep each summary very concise." : ""}
-- JSON only`;
-}
-
-function evaluateDiscoveryEarlyStop({
-  mode,
-  processedQueryCount,
-  totalQueryCount,
-  range,
-  allRaw,
-}: {
-  mode: NicheResearchDepth;
-  processedQueryCount: number;
-  totalQueryCount: number;
-  range: { from: string; to: string };
-  allRaw: SearchResultShape;
-}) {
-  const rules = DISCOVERY_EARLY_STOP_RULES[mode];
-  if (processedQueryCount < rules.minProcessedQueries || processedQueryCount >= totalQueryCount) {
-    return { shouldStop: false as const, summary: "" };
-  }
-
-  const redditCount = dedupeReddit(applyDateAndConfidenceReddit(allRaw.reddit, range.from, range.to)).length;
-  const xCount = dedupeX(applyDateAndConfidenceX(allRaw.x, range.from, range.to)).length;
-  const webCount = dedupeWeb(applyDateAndConfidenceWeb(allRaw.web, range.from, range.to)).length;
-  const youtubeCount = dedupeYouTube(applyDateAndConfidenceYouTube(allRaw.youtube, range.from, range.to)).length;
-
-  const counts = [redditCount, xCount, webCount, youtubeCount];
-  const totalSignals = counts.reduce((sum, value) => sum + value, 0);
-  const strongSources = counts.filter((value) => value >= rules.minSignalsPerStrongSource).length;
-
-  const shouldStop = totalSignals >= rules.minSignalsTotal && strongSources >= rules.minStrongSources;
-  const summary = `${totalSignals} total signals across ${strongSources} strong sources`;
-
-  return {
-    shouldStop,
-    summary,
-  };
-}
-
-function getCompetitorTimeout(mode: NicheResearchDepth) {
-  if (mode === "quick") {
-    return 45000;
-  }
-  if (mode === "deep") {
-    return 90000;
-  }
-  return 70000;
-}
-
-function getTrendNewsSafetyTimeoutMs() {
-  const configured = process.env.OPENROUTER_TREND_TIMEOUT_MS;
-  if (configured === undefined || configured === null || configured.trim() === "") {
-    return 1_800_000;
-  }
-
-  const parsed = Number(configured);
-  if (!Number.isFinite(parsed)) {
-    return 1_800_000;
-  }
-
-  if (parsed <= 0) {
+function resolveEvidenceReference(url: string, evidenceIndex: EvidenceIndex) {
+  if (!hasValidUrl(url)) {
     return null;
   }
 
-  return Math.round(parsed);
-}
-
-function isRetryableTrendError(error: unknown) {
-  if (!(error instanceof Error)) {
-    return false;
+  for (const key of buildUrlMatchKeys(url)) {
+    const match = evidenceIndex.byMatchKey.get(key);
+    if (match) {
+      return match;
+    }
   }
 
-  const source = error.message.toLowerCase();
-  return (
-    source.includes("timed out") ||
-    source.includes("timeout") ||
-    source.includes("rate limit") ||
-    source.includes("too many requests") ||
-    source.includes("temporarily")
-  );
+  return null;
 }
 
-function normalizeTrendNews(value: unknown, max: number): NicheTrendNews[] {
-  if (!Array.isArray(value)) {
+function buildUrlMatchKeys(url: string) {
+  const canonical = canonicalizeUrl(url);
+  if (!canonical) {
     return [];
   }
 
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
+  const withoutQuery = canonical.split("?")[0] ?? canonical;
+  return withoutQuery === canonical ? [canonical] : [canonical, withoutQuery];
+}
 
-      const typed = item as RawTrendNews;
-      const url = toSafeString(typed.url, "");
-      if (!hasValidUrl(url)) {
-        return null;
-      }
+function canonicalizeUrl(value: string) {
+  try {
+    const parsed = new URL(value.trim());
+    const pathname = parsed.pathname.replace(/\/+$/g, "") || "/";
+    parsed.hash = "";
 
-      const title = toSafeString(typed.title, "").slice(0, 220);
-      if (!title) {
-        return null;
-      }
+    const removableParams = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "ref",
+      "ref_src",
+      "fbclid",
+      "gclid",
+      "igshid",
+    ];
 
-      return {
-        title,
-        url,
-        summary: toSafeString(typed.summary, "").slice(0, 420),
-        whyItMatters: toSafeString(typed.whyItMatters, "").slice(0, 260),
-        date: toNullableDateString(typed.date),
-        confidence: normalizeEvidenceConfidence(typed.confidence),
-      };
-    })
-    .filter((item): item is NicheTrendNews => Boolean(item))
-    .slice(0, max);
+    for (const param of removableParams) {
+      parsed.searchParams.delete(param);
+    }
+
+    parsed.searchParams.sort();
+    const query = parsed.searchParams.toString();
+    return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${pathname}${query ? `?${query}` : ""}`;
+  } catch {
+    return null;
+  }
+}
+
+function buildTrendNewsFromEvidence({
+  trendSynthesis,
+  evidenceIndex,
+}: {
+  trendSynthesis: NicheTrendSynthesis;
+  evidenceIndex: EvidenceIndex;
+}) {
+  const output: NicheTrendNews[] = [];
+  const seen = new Set<string>();
+
+  const push = (item: NicheTrendNews | null) => {
+    if (!item || seen.has(item.url)) {
+      return;
+    }
+    seen.add(item.url);
+    output.push(item);
+  };
+
+  for (const citation of trendSynthesis.citations) {
+    const match = resolveEvidenceReference(citation.sourceUrl, evidenceIndex);
+    if (!match) {
+      continue;
+    }
+
+    push({
+      title: match.headline.slice(0, 220),
+      url: match.url,
+      summary: citation.claim.slice(0, 420),
+      whyItMatters: toSafeString(trendSynthesis.summary, "Recent 30-day evidence indicates a material market signal.").slice(0, 260),
+      date: citation.date ?? match.date,
+      confidence: "med",
+    });
+  }
+
+  for (const ref of evidenceIndex.refs) {
+    if (output.length >= 6) {
+      break;
+    }
+    push({
+      title: ref.headline.slice(0, 220),
+      url: ref.url,
+      summary: ref.headline.slice(0, 420),
+      whyItMatters: "Signal captured during the latest 30-day trend scan.",
+      date: ref.date,
+      confidence: "med",
+    });
+  }
+
+  return output.slice(0, 6);
+}
+
+function buildFallbackCandidatesFromEvidence({
+  niche,
+  requestedNiche,
+  trendSynthesis,
+  evidenceIndex,
+  candidateCount,
+}: {
+  niche: string;
+  requestedNiche: string | null;
+  trendSynthesis: NicheTrendSynthesis;
+  evidenceIndex: EvidenceIndex;
+  candidateCount: number;
+}) {
+  if (evidenceIndex.refs.length < 3) {
+    return [];
+  }
+
+  const refs = evidenceIndex.refs;
+  const issues = uniqueStrings(
+    (trendSynthesis.unresolvedIssues.length ? trendSynthesis.unresolvedIssues : extractIssueSignals(refs))
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const gaps = uniqueStrings(
+    (trendSynthesis.opportunityGaps.length ? trendSynthesis.opportunityGaps : trendSynthesis.keyTrends)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const topic = niche.trim() || "operations";
+
+  const maxCandidates = Math.max(1, Math.min(candidateCount, Math.max(1, Math.min(3, issues.length))));
+  const usedProofSignatures = new Set<string>();
+  const results: NicheCandidate[] = [];
+
+  for (let index = 0; index < maxCandidates; index += 1) {
+    const issue = issues[index] ?? issues[0] ?? "Recurring manual bottlenecks";
+    const gap = gaps[index] ?? gaps[0] ?? "AI automation for high-friction tasks";
+    const proofPoints = selectProofPointsForIssue({
+      issue,
+      refs,
+      offset: index,
+    });
+
+    if (proofPoints.length < 3) {
+      continue;
+    }
+
+    const proofSignature = proofPoints.map((item) => item.sourceUrl).sort().join("|");
+    if (usedProofSignatures.has(proofSignature)) {
+      continue;
+    }
+    usedProofSignatures.add(proofSignature);
+
+    const spendingClaims = proofPoints.filter((item) => isSpendingSignal(item.claim));
+    const painClaims = proofPoints.filter((item) => isPainSignal(item.claim));
+    const roomClaims = proofPoints.filter((item) => isRoomSignal(item.claim));
+
+    const spendingEvidence = (spendingClaims.length ? spendingClaims : proofPoints.slice(0, 2)).map((item) => item.claim);
+    const painEvidence = (painClaims.length ? painClaims : proofPoints.slice(1, 3)).map((item) => item.claim);
+    const roomEvidence = (roomClaims.length ? roomClaims : [proofPoints[0], proofPoints[2]].filter(Boolean)).map((item) => item.claim);
+
+    const spendingPassed = spendingEvidence.length > 0;
+    const painPassed = Math.max(3, painEvidence.length) >= 3;
+    const roomPassed = roomEvidence.length > 0;
+    const passCount = [spendingPassed, painPassed, roomPassed].filter(Boolean).length;
+    const verdict = normalizeVerdict(undefined, passCount);
+    const baseScore = passCount === 3 ? 72 : passCount === 2 ? 64 : 55;
+
+    const candidateName = toTitleCase(buildFallbackNameFromIssue(issue, topic));
+    const fallback: NicheCandidate = {
+      id: createCandidateId(candidateName, index),
+      name: candidateName,
+      requestedNiche: requestedNiche || undefined,
+      problemStatement: issue,
+      oneLiner: `AI-first product to eliminate "${issue}".`,
+      aiBuildAngle: gap,
+      icp: "Operators and founders with recurring workflow pain",
+      audience: "Operators and founders",
+      whyNow: toSafeString(
+        trendSynthesis.summary,
+        "Recent 30-day evidence shows persistent pain and demand for better tools.",
+      ),
+      recommendation: "Launch a narrow MVP, then validate willingness to pay through fast pilots.",
+      score: baseScore,
+      verdict,
+      demand: {
+        trendSummary: toSafeString(trendSynthesis.summary, "Evidence indicates sustained demand."),
+        urgencyDrivers: [issue].slice(0, 6),
+        buyingSignals: trendSynthesis.keyTrends.slice(0, 6),
+        searchKeywords: uniqueStrings([topic, ...extractThemesFromHeadlines([issue, gap], 4), "ai copilot", "automation"]).slice(0, 10),
+      },
+      landscape: {
+        competitionLevel: "medium",
+        incumbentTypes: ["manual service providers", "point tools"],
+        whitespace: [gap],
+        beachheadWedge: "Faster onboarding and lower operational friction.",
+      },
+      businessModel: {
+        pricingModel: "SaaS subscription + onboarding fee",
+        priceAnchor: "$49-$299 per month",
+        timeToFirstDollar: "2-6 weeks",
+        expectedGrossMargin: "70%+",
+      },
+      goToMarket: {
+        channels: ["Reddit communities", "X operator circles", "high-intent search capture"],
+        offerHook: `Automate "${issue}" in under 7 days.`,
+        salesMotion: "Founder-led outreach to operators already discussing this pain",
+        retentionLoop: "Weekly ROI reporting tied to hours and errors reduced",
+      },
+      execution: {
+        buildComplexity: "medium",
+        stackRecommendation: "Next.js + workflow automation engine + LLM APIs",
+        mvpScope: ["intake", "classification", "automation output", "impact dashboard"],
+        automationLevers: ["classification", "prioritization", "follow-up generation"],
+        moatLevers: ["workflow-specific data loops", "playbook tuning"],
+      },
+      outcomes: {
+        timeToFirstDollarDays: 60,
+        gtmDifficulty: 5,
+        integrationComplexity: 5,
+        weightedScore: computeOutcomeScore({
+          timeToFirstDollarDays: 60,
+          gtmDifficulty: 5,
+          integrationComplexity: 5,
+        }),
+      },
+      competitors: [],
+      personaVariants: normalizePersonaVariants([]),
+      validationPlan: [
+        {
+          experiment: "Run 10 interviews tied to top cited complaints",
+          successMetric: "At least 5 buyers confirm urgency and budget",
+          effort: "low",
+        },
+        {
+          experiment: "Pilot MVP with 3 design partners",
+          successMetric: "At least 2 pilots convert to paid",
+          effort: "medium",
+        },
+      ],
+      risks: ["Evidence quality can vary by sub-segment.", "Signal quality may shift as trends change."],
+      killCriteria: ["Kill if no paid pilot closes within 45 days."],
+      proofPoints,
+      checks: {
+        spending: {
+          passed: spendingPassed,
+          estimatedAnnualSpendUsd: spendingPassed ? 500 : null,
+          thresholdUsd: 500,
+          evidence: spendingEvidence.slice(0, 8),
+          claims: spendingEvidence.slice(0, 8).map((claim, claimIndex) => ({
+            claim,
+            confidence: claimIndex === 0 ? "high" : "med",
+            sourceUrl: proofPoints[claimIndex]?.sourceUrl,
+          })),
+          offerings: [],
+        },
+        pain: {
+          passed: painPassed,
+          recurringComplaintCount: Math.max(3, painEvidence.length),
+          complaintThemes: [issue].slice(0, 8),
+          evidence: painEvidence.slice(0, 8),
+          claims: painEvidence.slice(0, 8).map((claim, claimIndex) => ({
+            claim,
+            confidence: claimIndex === 0 ? "high" : "med",
+            sourceUrl: proofPoints[(claimIndex + 1) % proofPoints.length]?.sourceUrl,
+          })),
+        },
+        room: {
+          passed: roomPassed,
+          communityName: "Cross-platform operator communities",
+          platform: "Reddit/X",
+          members: null,
+          engagementSignal: roomEvidence[0] || "Observed active engagement in latest 30-day evidence.",
+          evidence: roomEvidence.slice(0, 8),
+          claims: roomEvidence.slice(0, 8).map((claim, claimIndex) => ({
+            claim,
+            confidence: claimIndex === 0 ? "high" : "med",
+            sourceUrl: proofPoints[(claimIndex + 2) % proofPoints.length]?.sourceUrl,
+          })),
+          url: proofPoints[0]?.sourceUrl ?? "",
+        },
+      },
+      sources: proofPoints.map((item) => ({
+        title: item.claim.slice(0, 80),
+        url: item.sourceUrl,
+        note: item.claim,
+        type: "general",
+        date: item.date,
+      })),
+    };
+
+    results.push(fallback);
+  }
+
+  return dedupeCandidates(results).slice(0, maxCandidates);
 }
 
 function normalizeCompetitors(value: unknown, max: number): NicheCandidate["competitors"] {
@@ -2255,6 +2536,160 @@ function autoKillCriteria(candidate: NicheCandidate) {
   return [...new Set(criteria)].slice(0, 8);
 }
 
+function extractThemesFromHeadlines(headlines: string[], max: number) {
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "that",
+    "this",
+    "your",
+    "about",
+    "into",
+    "over",
+    "under",
+    "after",
+    "before",
+    "while",
+    "have",
+    "has",
+    "had",
+    "are",
+    "was",
+    "were",
+    "will",
+    "just",
+    "more",
+    "less",
+    "new",
+    "latest",
+    "update",
+    "updates",
+    "today",
+    "days",
+    "last",
+    "month",
+    "weeks",
+    "week",
+    "ai",
+  ]);
+
+  const counts = new Map<string, number>();
+  for (const headline of headlines) {
+    const tokens = headline
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !stopWords.has(token));
+    for (const token of tokens) {
+      counts.set(token, (counts.get(token) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([token]) => token);
+}
+
+function selectProofPointsForIssue({
+  issue,
+  refs,
+  offset,
+}: {
+  issue: string;
+  refs: EvidenceReference[];
+  offset: number;
+}) {
+  const loweredIssueTokens = issue
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+
+  const prioritized = [...refs].sort((a, b) => {
+    const aText = a.headline.toLowerCase();
+    const bText = b.headline.toLowerCase();
+    const aMatches = loweredIssueTokens.filter((token) => aText.includes(token)).length;
+    const bMatches = loweredIssueTokens.filter((token) => bText.includes(token)).length;
+    return bMatches - aMatches;
+  });
+
+  const rotated = [...prioritized.slice(offset), ...prioritized.slice(0, offset)];
+  return rotated.slice(0, 3).map((item) => ({
+    claim: item.headline.slice(0, 220),
+    sourceUrl: item.url,
+    date: item.date,
+    sourceType: item.sourceType,
+  })) satisfies NicheProofPoint[];
+}
+
+function isSpendingSignal(text: string) {
+  return /\$|price|pricing|cost|expensive|budget|roi|paid|spend|subscription/i.test(text);
+}
+
+function isPainSignal(text: string) {
+  return /complaint|pain|friction|slow|manual|failure|fail|issue|problem|delay|denied|stuck|broken/i.test(text);
+}
+
+function isRoomSignal(text: string) {
+  return /community|forum|subreddit|reddit|x|twitter|engagement|comments|followers|members|group/i.test(text);
+}
+
+function buildFallbackNameFromIssue(issue: string, topic: string) {
+  const tokens = issue
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+
+  const filtered = tokens.filter((token) => !["this", "that", "with", "from", "into", "over"].includes(token));
+  const stem = filtered.slice(0, 3).join(" ");
+  if (!stem) {
+    return `${topic} workflow copilot`;
+  }
+  return `${stem} copilot`;
+}
+
+function extractIssueSignals(refs: EvidenceReference[]) {
+  const issueKeywords = [
+    "complaint",
+    "pain",
+    "friction",
+    "slow",
+    "failed",
+    "failure",
+    "expensive",
+    "cost",
+    "manual",
+    "backlog",
+    "denied",
+    "delay",
+    "stuck",
+    "broken",
+    "problem",
+    "issue",
+    "need better",
+    "request",
+  ];
+
+  const extracted = refs
+    .map((ref) => ref.headline.trim())
+    .filter(Boolean)
+    .filter((headline) => {
+      const lowered = headline.toLowerCase();
+      return issueKeywords.some((token) => lowered.includes(token));
+    });
+
+  if (extracted.length) {
+    return uniqueStrings(extracted);
+  }
+
+  return uniqueStrings(refs.map((ref) => ref.headline.trim()).filter(Boolean));
+}
+
 function inferAnnualPriceFromText(text: string): number | null {
   const lowered = text.toLowerCase();
   const match = lowered.match(/\$\s*(\d+(?:[\.,]\d+)?)/);
@@ -2276,6 +2711,16 @@ function inferAnnualPriceFromText(text: string): number | null {
   }
 
   return Math.round(amount);
+}
+
+function getCompetitorTimeout(mode: NicheResearchDepth) {
+  if (mode === "quick") {
+    return 20000;
+  }
+  if (mode === "deep") {
+    return 90000;
+  }
+  return 70000;
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -2351,7 +2796,6 @@ function createEmptyCheckpoint({
       reddit: [],
       x: [],
       web: [],
-      youtube: [],
     },
     finalCandidates: null,
     enrichedCandidates: null,
@@ -2414,6 +2858,14 @@ function toSlug(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function toTitleCase(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function hasValidUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
@@ -2427,6 +2879,20 @@ function toStringArray(value: unknown, max: number) {
     .map((item) => String(item).trim())
     .filter(Boolean)
     .slice(0, max);
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    output.push(value.trim());
+  }
+  return output;
 }
 
 function toNullableDateString(value: unknown): string | null {

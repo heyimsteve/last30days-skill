@@ -1,6 +1,6 @@
 import { toIsoDate } from "@/lib/server/date";
 import { extractJsonObject } from "@/lib/server/openrouter";
-import { RedditItem, WebItem, XItem, YouTubeItem } from "@/lib/types";
+import { RedditItem, WebItem, XItem } from "@/lib/types";
 
 interface RawItemsResponse {
   items?: Array<Record<string, unknown>>;
@@ -122,43 +122,6 @@ export function parseWebItems(text: string): Omit<WebItem, "date_confidence" | "
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
-export function parseYouTubeItems(text: string): Omit<YouTubeItem, "date_confidence" | "subs" | "score" | "source">[] {
-  const parsed = extractJsonObject<RawItemsResponse>(text);
-  const items = parsed?.items ?? [];
-
-  return items
-    .map((item, index) => {
-      const url = String(item.url ?? "").trim();
-      if (!url || (!url.includes("youtube.com/watch") && !url.includes("youtu.be/"))) {
-        return null;
-      }
-
-      const title = String(item.title ?? "").trim();
-      const snippet = String(item.snippet ?? item.description ?? "").trim();
-      if (!title && !snippet) {
-        return null;
-      }
-
-      const date =
-        toIsoDate(normalizeDateField(item.date)) ??
-        extractDateFromUrl(url) ??
-        extractDateFromText(`${title} ${snippet}`);
-
-      return {
-        id: `Y${index + 1}`,
-        url,
-        title: title.slice(0, 220),
-        channel: String(item.channel ?? item.author ?? "").trim().replace(/^@/, ""),
-        snippet: snippet.slice(0, 500),
-        date,
-        relevance: clamp01(item.relevance),
-        why_relevant: String(item.why_relevant ?? "").trim().slice(0, 400),
-        engagement: parseYouTubeEngagement(item.engagement, item),
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => Boolean(item));
-}
-
 function normalizeDateField(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -192,23 +155,6 @@ function parseXEngagement(raw: unknown) {
     reposts: toNullableInt(item.reposts),
     replies: toNullableInt(item.replies),
     quotes: toNullableInt(item.quotes),
-  };
-}
-
-function parseYouTubeEngagement(raw: unknown, fallback: Record<string, unknown>) {
-  if (raw && typeof raw === "object") {
-    const item = raw as Record<string, unknown>;
-    return {
-      views: toNullableInt(item.views),
-      likes: toNullableInt(item.likes),
-      num_comments: toNullableInt(item.num_comments ?? item.comments),
-    };
-  }
-
-  return {
-    views: toNullableInt(fallback.views),
-    likes: toNullableInt(fallback.likes),
-    num_comments: toNullableInt(fallback.num_comments ?? fallback.comments),
   };
 }
 

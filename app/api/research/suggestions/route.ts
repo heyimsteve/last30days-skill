@@ -21,7 +21,7 @@ const FALLBACK_NICHES = [
   "Shopify returns fraud ops",
   "HVAC quote follow-up automation",
   "Construction bid qualification workflows",
-  "Youtube sponsorship deal ops",
+  "Creator sponsorship deal ops",
   "Legal intake form triage for family law",
   "Claims adjuster document summarization",
   "Mortgage broker lead nurture workflows",

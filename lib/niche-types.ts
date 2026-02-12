@@ -1,11 +1,12 @@
 export type NicheResearchDepth = "quick" | "default" | "deep";
 export type NicheVerdict = "pass" | "watch" | "fail";
-export type PlanOutputType = "prd" | "plan";
+export type PlanOutputType = "prd" | "market" | "plan";
 export type ValidationEffort = "low" | "medium" | "high";
 export type CompetitionLevel = "low" | "medium" | "high";
 export type BuildComplexity = "low" | "medium" | "high";
 export type EvidenceConfidence = "high" | "med" | "low";
 export type PersonaType = "agency-owner" | "operator" | "founder";
+export type ProofSourceType = "reddit" | "x" | "web";
 
 export interface TokenUsageSummary {
   inputTokens: number;
@@ -138,6 +139,21 @@ export interface NicheTrendNews {
   confidence: EvidenceConfidence;
 }
 
+export interface NicheProofPoint {
+  claim: string;
+  sourceUrl: string;
+  date: string | null;
+  sourceType: ProofSourceType;
+}
+
+export interface NicheTrendSynthesis {
+  summary: string;
+  keyTrends: string[];
+  unresolvedIssues: string[];
+  opportunityGaps: string[];
+  citations: NicheProofPoint[];
+}
+
 export interface NicheCandidate {
   id: string;
   name: string;
@@ -162,6 +178,7 @@ export interface NicheCandidate {
   validationPlan: ValidationExperiment[];
   risks: string[];
   killCriteria: string[];
+  proofPoints: NicheProofPoint[];
   checks: {
     spending: SpendingCheck;
     pain: PainCheck;
@@ -188,6 +205,7 @@ export interface NicheResearchResponse {
     elapsedMs: number;
     error?: string;
     trendNews?: NicheTrendNews[];
+    trendSynthesis?: NicheTrendSynthesis | null;
   }>;
   stats: {
     total: number;
@@ -224,6 +242,30 @@ export interface NicheResearchProgressEvent {
 export interface NichePlanResponse {
   title: string;
   type: PlanOutputType;
+  markdown: string;
+  generatedAt: string;
+  usage: TokenUsageSummary;
+}
+
+export interface MarketAnalysisResult {
+  overallScore: number;
+  verdict: "strong" | "moderate" | "weak";
+  subscores: {
+    demand: number;
+    urgency: number;
+    accessibility: number;
+    monetization: number;
+    competitionHeadroom: number;
+  };
+  rationale: string[];
+  risks: string[];
+  sources: NicheSource[];
+  generatedAt: string;
+  usage: TokenUsageSummary;
+}
+
+export interface PromoPackResponse {
+  title: string;
   markdown: string;
   generatedAt: string;
   usage: TokenUsageSummary;

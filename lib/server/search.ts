@@ -1,5 +1,5 @@
 import { OpenRouterUsage, extractTextFromOpenRouterResponse, extractUsage, openRouterRequest } from "@/lib/server/openrouter";
-import { parseRedditItems, parseWebItems, parseXItems, parseYouTubeItems } from "@/lib/server/parse";
+import { parseRedditItems, parseWebItems, parseXItems } from "@/lib/server/parse";
 import { SourceType } from "@/lib/types";
 
 interface OpenRouterResponsesResponse {
@@ -38,9 +38,6 @@ function getSearchModelFor(source: SourceType) {
   if (source === "x") {
     return process.env.OPENROUTER_X_MODEL ?? "x-ai/grok-4.1-fast:online";
   }
-  if (source === "youtube") {
-    return process.env.OPENROUTER_YOUTUBE_MODEL ?? "openai/gpt-5.2:online";
-  }
   return process.env.OPENROUTER_WEB_MODEL ?? "openai/gpt-5.2:online";
 }
 
@@ -50,12 +47,12 @@ function inputAsMessage(prompt: string) {
 
 function getSearchTimeoutMs(depth: Depth) {
   if (depth === "quick") {
-    return 180000;
+    return 50000;
   }
   if (depth === "deep") {
-    return 330000;
+    return 210000;
   }
-  return 270000;
+  return 120000;
 }
 
 export async function searchReddit({ topic, fromDate, toDate, depth, signal }: SearchParams) {
@@ -208,56 +205,4 @@ Rules:
     model,
     durationMs: Date.now() - startedAt,
   } satisfies SourceSearchResult<ReturnType<typeof parseWebItems>[number]>;
-}
-
-export async function searchYouTube({ topic, fromDate, toDate, depth, signal }: SearchParams) {
-  const model = getSearchModelFor("youtube");
-  const range = DEPTH_LIMITS[depth];
-  const startedAt = Date.now();
-  const prompt = `Search YouTube for videos and channels about: ${topic}
-
-Window: ${fromDate} to ${toDate}. Return ${range.min}-${range.max} relevant YouTube results.
-
-Return ONLY JSON:
-{
-  "items": [
-    {
-      "title": "video title",
-      "url": "https://www.youtube.com/watch?v=...",
-      "channel": "channel name",
-      "snippet": "short summary",
-      "date": "YYYY-MM-DD or null",
-      "engagement": {
-        "views": 10000,
-        "likes": 400,
-        "num_comments": 80
-      },
-      "why_relevant": "why this matters",
-      "relevance": 0.0
-    }
-  ]
-}
-
-Rules:
-- url must be youtube.com/watch or youtu.be
-- relevance is 0.0 to 1.0
-- include date if known; null if unknown`;
-
-  const response = await openRouterRequest<OpenRouterResponsesResponse>({
-    path: "/responses",
-    payload: {
-      model,
-      tools: [{ type: "web_search" }],
-      input: inputAsMessage(prompt),
-    },
-    timeoutMs: getSearchTimeoutMs(depth),
-    signal,
-  });
-
-  return {
-    items: parseYouTubeItems(extractTextFromOpenRouterResponse(response as Record<string, unknown>)),
-    usage: extractUsage(response as Record<string, unknown>),
-    model,
-    durationMs: Date.now() - startedAt,
-  } satisfies SourceSearchResult<ReturnType<typeof parseYouTubeItems>[number]>;
 }

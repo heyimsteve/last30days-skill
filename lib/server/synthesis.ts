@@ -1,5 +1,5 @@
 import { OpenRouterUsage, extractJsonObject, extractUsage, openRouterRequest } from "@/lib/server/openrouter";
-import { SynthesisResult, WebItem, XItem, RedditItem, YouTubeItem } from "@/lib/types";
+import { SynthesisResult, WebItem, XItem, RedditItem } from "@/lib/types";
 
 const SYNTH_MODEL_DEFAULT = "anthropic/claude-sonnet-4.5";
 
@@ -44,21 +44,6 @@ function compactWeb(items: WebItem[]) {
     .join("\n");
 }
 
-function compactYouTube(items: YouTubeItem[]) {
-  if (!items.length) {
-    return "No YouTube items.";
-  }
-
-  return items
-    .slice(0, 15)
-    .map((item) => {
-      const views = item.engagement?.views ?? 0;
-      const likes = item.engagement?.likes ?? 0;
-      return `- [${views} views ${likes} likes] ${item.channel}: ${item.title}`;
-    })
-    .join("\n");
-}
-
 interface ChatCompletionResponse {
   choices?: Array<{
     message?: {
@@ -80,7 +65,6 @@ export async function synthesize(
   reddit: RedditItem[],
   x: XItem[],
   web: WebItem[],
-  youtube: YouTubeItem[] = [],
 ): Promise<SynthesisRunResult> {
   const model = process.env.OPENROUTER_SYNTH_MODEL ?? SYNTH_MODEL_DEFAULT;
   const startedAt = Date.now();
@@ -96,8 +80,6 @@ Reddit:\n${compactReddit(reddit)}
 X:\n${compactX(x)}
 
 Web:\n${compactWeb(web)}
-
-YouTube:\n${compactYouTube(youtube)}
 
 Rules:
 - summary: 2-4 sentences

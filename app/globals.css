@@ -100,6 +100,22 @@ a {
   line-height: 1.5;
 }
 
+.nv-hero-badges {
+  margin-top: 0.72rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.nv-hero-badges span {
+  border: 1px solid rgba(13, 125, 250, 0.3);
+  border-radius: 999px;
+  padding: 0.18rem 0.52rem;
+  font-size: 0.7rem;
+  color: #0d5ac8;
+  background: rgba(255, 255, 255, 0.86);
+}
+
 .nv-shell {
   display: grid;
   gap: 1rem;
@@ -435,7 +451,7 @@ a {
 .nv-summary-bar {
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   margin-bottom: 0.62rem;
 }
 
@@ -894,10 +910,20 @@ a {
   line-height: 1.35;
 }
 
+.nv-score-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
 .nv-source-list {
   margin: 0.7rem 0;
   display: grid;
   gap: 0.35rem;
+}
+
+.nv-action-stack {
+  margin: 0.7rem 0 0.2rem;
+  display: grid;
+  gap: 0.5rem;
 }
 
 .nv-source-list a {

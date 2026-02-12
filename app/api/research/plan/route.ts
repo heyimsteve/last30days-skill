@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 }
 
 function isPlanType(value: unknown): value is PlanOutputType {
-  return value === "prd" || value === "plan";
+  return value === "prd" || value === "market" || value === "plan";
 }
 
 function isCandidate(value: unknown): value is NicheCandidate {

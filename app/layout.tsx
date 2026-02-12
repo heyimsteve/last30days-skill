@@ -16,9 +16,9 @@ const bodyFont = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Niche Validator Studio",
+  title: "Last30Days Opportunity Studio",
   description:
-    "Validate niche opportunities with spending, pain, and community-room checks, then generate markdown PRDs and execution plans.",
+    "Run trend-first Reddit/X/Web research on the last 30 days, generate proof-backed AI opportunities, and produce PRD, Market Plan, and Execution Plan outputs.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

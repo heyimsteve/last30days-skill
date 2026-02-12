@@ -1,5 +1,5 @@
 import { getDateConfidence, isWithinRange } from "@/lib/server/date";
-import { RedditItem, SearchItem, WebItem, XItem, YouTubeItem } from "@/lib/types";
+import { RedditItem, SearchItem, WebItem, XItem } from "@/lib/types";
 
 function normalizeText(value: string) {
   return value.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -106,22 +106,6 @@ export function applyDateAndConfidenceWeb(items: Omit<WebItem, "score" | "subs" 
     }));
 }
 
-export function applyDateAndConfidenceYouTube(
-  items: Omit<YouTubeItem, "score" | "subs" | "date_confidence" | "source">[],
-  from: string,
-  to: string,
-): YouTubeItem[] {
-  return items
-    .filter((item) => isWithinRange(item.date, from, to))
-    .map((item) => ({
-      ...item,
-      source: "youtube",
-      date_confidence: getDateConfidence(item.date, from, to),
-      score: 0,
-      subs: { relevance: 0, recency: 0, engagement: 0 },
-    }));
-}
-
 export function sortByScoreAndDate<T extends SearchItem>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     if (b.score !== a.score) {
@@ -152,8 +136,4 @@ export function dedupeWeb(items: WebItem[]) {
     seen.add(key);
     return true;
   });
-}
-
-export function dedupeYouTube(items: YouTubeItem[]) {
-  return dedupeBySimilarity(items, (item) => `${item.channel} ${item.title}`);
 }
