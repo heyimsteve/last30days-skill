@@ -1,5 +1,6 @@
 """Environment and API key management for last30days skill."""
 
+import json
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -48,15 +49,22 @@ def get_config() -> Dict[str, Any]:
     # Load from config file first (if configured)
     file_env = load_env_file(CONFIG_FILE) if CONFIG_FILE else {}
 
-    # Environment variables override file
-    config = {
-        'OPENAI_API_KEY': os.environ.get('OPENAI_API_KEY') or file_env.get('OPENAI_API_KEY'),
-        'XAI_API_KEY': os.environ.get('XAI_API_KEY') or file_env.get('XAI_API_KEY'),
-        'OPENAI_MODEL_POLICY': os.environ.get('OPENAI_MODEL_POLICY') or file_env.get('OPENAI_MODEL_POLICY', 'auto'),
-        'OPENAI_MODEL_PIN': os.environ.get('OPENAI_MODEL_PIN') or file_env.get('OPENAI_MODEL_PIN'),
-        'XAI_MODEL_POLICY': os.environ.get('XAI_MODEL_POLICY') or file_env.get('XAI_MODEL_POLICY', 'latest'),
-        'XAI_MODEL_PIN': os.environ.get('XAI_MODEL_PIN') or file_env.get('XAI_MODEL_PIN'),
-    }
+    # Build config: process.env > .env file
+    keys = [
+        ('OPENAI_API_KEY', None),
+        ('XAI_API_KEY', None),
+        ('OPENROUTER_API_KEY', None),
+        ('PARALLEL_API_KEY', None),
+        ('BRAVE_API_KEY', None),
+        ('OPENAI_MODEL_POLICY', 'auto'),
+        ('OPENAI_MODEL_PIN', None),
+        ('XAI_MODEL_POLICY', 'latest'),
+        ('XAI_MODEL_PIN', None),
+    ]
+
+    config = {}
+    for key, default in keys:
+        config[key] = os.environ.get(key) or file_env.get(key, default)
 
     return config
 
@@ -69,28 +77,53 @@ def config_exists() -> bool:
 def get_available_sources(config: Dict[str, Any]) -> str:
     """Determine which sources are available based on API keys.
 
-    Returns: 'both', 'reddit', 'x', or 'web' (fallback when no keys)
+    Returns: 'all', 'both', 'reddit', 'reddit-web', 'x', 'x-web', 'web', or 'none'
     """
     has_openai = bool(config.get('OPENAI_API_KEY'))
     has_xai = bool(config.get('XAI_API_KEY'))
+    has_web = has_web_search_keys(config)
 
     if has_openai and has_xai:
-        return 'both'
+        return 'all' if has_web else 'both'
     elif has_openai:
-        return 'reddit'
+        return 'reddit-web' if has_web else 'reddit'
     elif has_xai:
-        return 'x'
+        return 'x-web' if has_web else 'x'
+    elif has_web:
+        return 'web'
     else:
-        return 'web'  # Fallback: WebSearch only (no API keys needed)
+        return 'web'  # Fallback: assistant WebSearch (no API keys needed)
+
+
+def has_web_search_keys(config: Dict[str, Any]) -> bool:
+    """Check if any web search API keys are configured."""
+    return bool(config.get('OPENROUTER_API_KEY') or config.get('PARALLEL_API_KEY') or config.get('BRAVE_API_KEY'))
+
+
+def get_web_search_source(config: Dict[str, Any]) -> Optional[str]:
+    """Determine the best available web search backend.
+
+    Priority: Parallel AI > Brave > OpenRouter/Sonar Pro
+
+    Returns: 'parallel', 'brave', 'openrouter', or None
+    """
+    if config.get('PARALLEL_API_KEY'):
+        return 'parallel'
+    if config.get('BRAVE_API_KEY'):
+        return 'brave'
+    if config.get('OPENROUTER_API_KEY'):
+        return 'openrouter'
+    return None
 
 
 def get_missing_keys(config: Dict[str, Any]) -> str:
     """Determine which sources are missing (accounting for Bird).
 
-    Returns: 'both', 'reddit', 'x', or 'none'
+    Returns: 'all', 'both', 'reddit', 'x', 'web', or 'none'
     """
     has_openai = bool(config.get('OPENAI_API_KEY'))
     has_xai = bool(config.get('XAI_API_KEY'))
+    has_web = has_web_search_keys(config)
 
     # Check if Bird provides X access (import here to avoid circular dependency)
     from . import bird_x
@@ -98,14 +131,16 @@ def get_missing_keys(config: Dict[str, Any]) -> str:
 
     has_x = has_xai or has_bird
 
-    if has_openai and has_x:
+    if has_openai and has_x and has_web:
         return 'none'
+    elif has_openai and has_x:
+        return 'web'  # Missing web search keys
     elif has_openai:
-        return 'x'  # Missing X source
+        return 'x'  # Missing X source (and possibly web)
     elif has_x:
-        return 'reddit'  # Missing OpenAI key
+        return 'reddit'  # Missing OpenAI key (and possibly web)
     else:
-        return 'both'  # Missing both
+        return 'all'  # Missing everything
 
 
 def validate_sources(requested: str, available: str, include_web: bool = False) -> tuple[str, Optional[str]]:
@@ -119,14 +154,23 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
     Returns:
         Tuple of (effective_sources, error_message)
     """
-    # WebSearch-only mode (no API keys)
+    # No API keys at all
+    if available == 'none':
+        if requested == 'auto':
+            return 'web', "No API keys configured. The assistant can still search the web if it has a search tool."
+        elif requested == 'web':
+            return 'web', None
+        else:
+            return 'web', f"No API keys configured. Add keys to ~/.config/last30days/.env for Reddit/X."
+
+    # Web-only mode (only web search API keys)
     if available == 'web':
         if requested == 'auto':
             return 'web', None
         elif requested == 'web':
             return 'web', None
         else:
-            return 'web', f"No API keys configured. Using WebSearch fallback. Add keys to ~/.config/last30days/.env for Reddit/X."
+            return 'web', f"Only web search keys configured. Add OPENAI_API_KEY for Reddit, XAI_API_KEY for X."
 
     if requested == 'auto':
         # Add web to sources if include_web is set
