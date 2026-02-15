@@ -1,8 +1,8 @@
 ---
 name: last30days
 version: "2.1"
-description: Research a topic from the last 30 days on Reddit + X + YouTube + Web, become an expert, and write copy-paste-ready prompts for the user's target tool.
-argument-hint: 'nano banana pro prompts, NVIDIA news, best AI video tools'
+description: "Research a topic from the last 30 days. Also triggered by 'last30'. Sources: Reddit, X, YouTube, web. Become an expert and write copy-paste-ready prompts."
+argument-hint: 'last30 AI video tools, last30 best project management tools'
 allowed-tools: Bash, Read, Write, AskUserQuestion, WebSearch
 ---
 

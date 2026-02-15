@@ -924,9 +924,9 @@ def main():
     # Check what keys are missing for promo messaging
     missing_keys = env.get_missing_keys(config)
 
-    # Show promo for missing keys BEFORE research
+    # Show NUX / promo for missing keys BEFORE research
     if missing_keys != 'none':
-        progress.show_promo(missing_keys)
+        progress.show_promo(missing_keys, diag=diag)
 
     # Select models
     if args.mock:

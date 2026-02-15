@@ -1,8 +1,8 @@
 ---
 name: last30days
 version: "2.1-open"
-description: "Research topics, manage watchlists, and get morning briefings — all from Reddit, X, YouTube, and the web."
-argument-hint: 'AI video tools, watch add "NVIDIA news", briefing, history --trending'
+description: "Research topics, manage watchlists, get briefings, query history. Also triggered by 'last30'. Sources: Reddit, X, YouTube, web."
+argument-hint: 'last30 AI video tools, last30 watch my competitor every week, last30 give me my briefing'
 allowed-tools: Bash, Read, Write, AskUserQuestion, WebSearch
 ---
 

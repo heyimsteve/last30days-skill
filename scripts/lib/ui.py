@@ -87,84 +87,48 @@ WEB_ONLY_MESSAGES = [
     "Discovering tutorials...",
 ]
 
-# Promo message for users without API keys
-PROMO_MESSAGE = f"""
-{Colors.YELLOW}{Colors.BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.RESET}
-{Colors.YELLOW}⚡ UNLOCK THE FULL POWER OF /last30days{Colors.RESET}
+def _build_nux_message(diag: dict = None) -> str:
+    """Build conversational NUX message with dynamic source status."""
+    if diag:
+        reddit = "✓" if diag.get("openai") else "✗"
+        x = "✓" if diag.get("x_source") else "✗"
+        youtube = "✓" if diag.get("youtube") else "✗"
+        web = "✓" if diag.get("web_search_backend") else "✗"
+        status_line = f"Reddit {reddit}, X {x}, YouTube {youtube}, Web {web}"
+    else:
+        status_line = "YouTube ✓, Web ✓, Reddit ✗, X ✗"
 
-{Colors.DIM}Right now you're using web search only. Unlock more sources:{Colors.RESET}
+    return f"""
+I just researched that for you. Here's what I've got right now:
 
-  {Colors.YELLOW}🟠 Reddit{Colors.RESET} - Real upvotes, comments, and community insights
-     └─ Add OPENAI_API_KEY (uses OpenAI's web_search for Reddit)
+{status_line}
 
-  {Colors.CYAN}🔵 X (Twitter){Colors.RESET} - Real-time posts, likes, reposts from creators
-     └─ {Colors.GREEN}FREE:{Colors.RESET} npm install -g @steipete/bird {Colors.DIM}(uses browser session){Colors.RESET}
-     └─ {Colors.DIM}Or:{Colors.RESET} Add XAI_API_KEY (paid API)
+You can unlock more sources with API keys — just ask me how and I'll walk you through it. More sources means better research, but it works fine as-is.
 
-{Colors.DIM}Setup:{Colors.RESET} Edit {Colors.BOLD}~/.config/last30days/.env{Colors.RESET}
-{Colors.YELLOW}{Colors.BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.RESET}
-"""
+Some examples of what you can do:
+- "last30 what are people saying about Figma"
+- "last30 watch my biggest competitor every week"
+- "last30 tell me once a month about what my board members are up to"
+- "last30 give me my morning briefing"
+- "last30 what have you found about AI video?"
+- "last30 set a budget so you don't go crazy"
 
-PROMO_MESSAGE_PLAIN = """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ UNLOCK THE FULL POWER OF /last30days
-
-Right now you're using web search only. Unlock more sources:
-
-  🟠 Reddit - Real upvotes, comments, and community insights
-     └─ Add OPENAI_API_KEY (uses OpenAI's web_search for Reddit)
-
-  🔵 X (Twitter) - Real-time posts, likes, reposts from creators
-     └─ FREE: npm install -g @steipete/bird (uses browser session)
-     └─ Or: Add XAI_API_KEY (paid API)
-
-Setup: Edit ~/.config/last30days/.env
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Just start with "last30" and talk to me like normal.
 """
 
 # Shorter promo for single missing key
 PROMO_SINGLE_KEY = {
-    "reddit": f"""
-{Colors.DIM}💡 Tip: Add {Colors.YELLOW}OPENAI_API_KEY{Colors.RESET}{Colors.DIM} to ~/.config/last30days/.env for Reddit data with real engagement metrics!{Colors.RESET}
-""",
-    "x": f"""
-{Colors.DIM}💡 Tip: For X/Twitter data with real likes & reposts:{Colors.RESET}
-   {Colors.GREEN}FREE:{Colors.RESET} npm install -g @steipete/bird {Colors.DIM}(uses browser session){Colors.RESET}
-   {Colors.DIM}Or: Add XAI_API_KEY to ~/.config/last30days/.env{Colors.RESET}
-""",
+    "reddit": "\n💡 You can unlock Reddit with an OpenAI API key — just ask me how.\n",
+    "x": "\n💡 You can unlock X with an xAI API key — just ask me how.\n",
 }
 
-PROMO_SINGLE_KEY_PLAIN = {
-    "reddit": "\n💡 Tip: Add OPENAI_API_KEY to ~/.config/last30days/.env for Reddit data with real engagement metrics!\n",
-    "x": "\n💡 Tip: For X/Twitter data with real likes & reposts:\n   FREE: npm install -g @steipete/bird (uses browser session)\n   Or: Add XAI_API_KEY to ~/.config/last30days/.env\n",
-}
-
-# Bird CLI prompts
-BIRD_INSTALL_PROMPT = f"""
-{Colors.CYAN}{Colors.BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{Colors.RESET}
-{Colors.CYAN}🐦 FREE X/TWITTER SEARCH AVAILABLE{Colors.RESET}
-
-Bird CLI provides free X search using your browser session (no API key needed).
-
-"""
-
-BIRD_INSTALL_PROMPT_PLAIN = """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🐦 FREE X/TWITTER SEARCH AVAILABLE
-
-Bird CLI provides free X search using your browser session (no API key needed).
-
-"""
-
+# Bird auth help (for local users with vendored Bird CLI)
 BIRD_AUTH_HELP = f"""
 {Colors.YELLOW}Bird authentication failed.{Colors.RESET}
 
 To fix this:
 1. Log into X (twitter.com) in Safari, Chrome, or Firefox
-2. Run: {Colors.BOLD}bird check{Colors.RESET} to verify credentials
-3. Try again
-
-For manual setup, see: https://github.com/steipete/bird#authentication
+2. Try again — Bird reads your browser cookies automatically.
 """
 
 BIRD_AUTH_HELP_PLAIN = """
@@ -172,10 +136,7 @@ Bird authentication failed.
 
 To fix this:
 1. Log into X (twitter.com) in Safari, Chrome, or Firefox
-2. Run: bird check to verify credentials
-3. Try again
-
-For manual setup, see: https://github.com/steipete/bird#authentication
+2. Try again — Bird reads your browser cookies automatically.
 """
 
 # Spinner frames
@@ -357,52 +318,17 @@ class ProgressDisplay:
             sys.stderr.write(f"✓ Ready for web search ({elapsed:.1f}s)\n")
         sys.stderr.flush()
 
-    def show_promo(self, missing: str = "both"):
-        """Show promotional message for missing API keys.
+    def show_promo(self, missing: str = "both", diag: dict = None):
+        """Show NUX / promotional message for missing API keys.
 
         Args:
-            missing: 'both', 'reddit', or 'x' - which keys are missing
+            missing: 'both', 'all', 'reddit', or 'x' - which keys are missing
+            diag: Optional diagnostics dict for dynamic source status
         """
-        if missing == "both":
-            if IS_TTY:
-                sys.stderr.write(PROMO_MESSAGE)
-            else:
-                sys.stderr.write(PROMO_MESSAGE_PLAIN)
+        if missing in ("both", "all"):
+            sys.stderr.write(_build_nux_message(diag))
         elif missing in PROMO_SINGLE_KEY:
-            if IS_TTY:
-                sys.stderr.write(PROMO_SINGLE_KEY[missing])
-            else:
-                sys.stderr.write(PROMO_SINGLE_KEY_PLAIN[missing])
-        sys.stderr.flush()
-
-    def prompt_bird_install(self) -> bool:
-        """Prompt user to install Bird CLI.
-
-        Returns:
-            True if user wants to install, False otherwise.
-        """
-        if IS_TTY:
-            sys.stderr.write(BIRD_INSTALL_PROMPT)
-        else:
-            sys.stderr.write(BIRD_INSTALL_PROMPT_PLAIN)
-        sys.stderr.flush()
-
-        try:
-            response = input("Install Bird CLI now? (y/n): ").strip().lower()
-            return response in ('y', 'yes')
-        except (EOFError, KeyboardInterrupt):
-            return False
-
-    def show_bird_install_success(self, username: str):
-        """Show Bird installation success message."""
-        msg = f"{Colors.GREEN}✓ Bird installed and authenticated as @{username}{Colors.RESET}\n" if IS_TTY else f"✓ Bird installed and authenticated as @{username}\n"
-        sys.stderr.write(msg)
-        sys.stderr.flush()
-
-    def show_bird_install_failed(self, error: str):
-        """Show Bird installation failure message."""
-        msg = f"{Colors.RED}✗ Bird installation failed: {error}{Colors.RESET}\n" if IS_TTY else f"✗ Bird installation failed: {error}\n"
-        sys.stderr.write(msg)
+            sys.stderr.write(PROMO_SINGLE_KEY[missing])
         sys.stderr.flush()
 
     def show_bird_auth_help(self):
