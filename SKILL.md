@@ -61,7 +61,22 @@ This text MUST appear before you call any tools. It confirms to the user that yo
 
 **Step 1: Run the research script**
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/last30days}/scripts/last30days.py" "$ARGUMENTS" --emit=compact 2>&1
+# Find skill root — works in repo checkout, Claude Code, or Codex install
+for dir in \
+  "." \
+  "${CLAUDE_PLUGIN_ROOT:-}" \
+  "$HOME/.claude/skills/last30days" \
+  "$HOME/.agents/skills/last30days" \
+  "$HOME/.codex/skills/last30days"; do
+  [ -n "$dir" ] && [ -f "$dir/scripts/last30days.py" ] && SKILL_ROOT="$dir" && break
+done
+
+if [ -z "${SKILL_ROOT:-}" ]; then
+  echo "ERROR: Could not find scripts/last30days.py" >&2
+  exit 1
+fi
+
+python3 "${SKILL_ROOT}/scripts/last30days.py" "$ARGUMENTS" --emit=compact 2>&1
 ```
 
 The script will automatically:

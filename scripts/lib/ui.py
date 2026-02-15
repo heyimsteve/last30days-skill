@@ -344,7 +344,7 @@ class ProgressDisplay:
     def end_web_only(self):
         """End web-only spinner."""
         if self.spinner:
-            self.spinner.stop(f"{Colors.GREEN}Web{Colors.RESET} Claude will search the web")
+            self.spinner.stop(f"{Colors.GREEN}Web{Colors.RESET} assistant will search the web")
 
     def show_web_only_complete(self):
         """Show completion for web-only mode."""
@@ -352,7 +352,7 @@ class ProgressDisplay:
         if IS_TTY:
             sys.stderr.write(f"\n{Colors.GREEN}{Colors.BOLD}✓ Ready for web search{Colors.RESET} ")
             sys.stderr.write(f"{Colors.DIM}({elapsed:.1f}s){Colors.RESET}\n")
-            sys.stderr.write(f"  {Colors.GREEN}Web:{Colors.RESET} Claude will search blogs, docs & news\n\n")
+            sys.stderr.write(f"  {Colors.GREEN}Web:{Colors.RESET} assistant will search blogs, docs & news\n\n")
         else:
             sys.stderr.write(f"✓ Ready for web search ({elapsed:.1f}s)\n")
         sys.stderr.flush()

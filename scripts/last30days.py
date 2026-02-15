@@ -376,8 +376,8 @@ def run_research(
     Returns:
         Tuple of (reddit_items, x_items, youtube_items, web_needed, raw_openai, raw_xai, raw_reddit_enriched, reddit_error, x_error, youtube_error)
 
-    Note: web_needed is True when WebSearch should be performed by Claude.
-    The script outputs a marker and Claude handles WebSearch in its session.
+    Note: web_needed is True when web search should be performed by the assistant.
+    The script outputs a marker and the assistant handles web search in its session.
     """
     reddit_items = []
     x_items = []
@@ -392,7 +392,7 @@ def run_research(
     # Check if WebSearch is needed (always needed in web-only mode)
     web_needed = sources in ("all", "web", "reddit-web", "x-web")
 
-    # Web-only mode: no API calls needed, Claude handles everything
+    # Web-only mode: no API calls needed, assistant handles everything
     if sources == "web":
         if progress:
             progress.start_web_only()
@@ -803,7 +803,7 @@ def output_result(
         print(f"Topic: {topic}")
         print(f"Date range: {from_date} to {to_date}")
         print("")
-        print("Claude: Use your WebSearch tool to find 8-15 relevant web pages.")
+        print("Assistant: Use your web search tool to find 8-15 relevant web pages.")
         print("EXCLUDE: reddit.com, x.com, twitter.com (already covered above)")
         print(f"INCLUDE: blogs, docs, news, tutorials from the last {days} days")
         print("")
