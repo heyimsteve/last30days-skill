@@ -59,7 +59,10 @@ This text MUST appear before you call any tools. It confirms to the user that yo
 
 ## Research Execution
 
-**Step 1: Run the research script**
+**Step 1: Run the research script (FOREGROUND — do NOT background this)**
+
+**CRITICAL: Run this command in the FOREGROUND with a 5-minute timeout. Do NOT use run_in_background. The full output contains Reddit, X, AND YouTube data that you need to read completely.**
+
 ```bash
 # Find skill root — works in repo checkout, Claude Code, or Codex install
 for dir in \
@@ -76,19 +79,25 @@ if [ -z "${SKILL_ROOT:-}" ]; then
   exit 1
 fi
 
-python3 "${SKILL_ROOT}/scripts/last30days.py" "$ARGUMENTS" --emit=compact 2>&1
+python3 "${SKILL_ROOT}/scripts/last30days.py" "$ARGUMENTS" --emit=compact
 ```
+
+Use a **timeout of 300000** (5 minutes) on the Bash call. The script typically takes 1-3 minutes.
 
 The script will automatically:
 - Detect available API keys
-- Run Reddit/X searches if keys exist
-- Signal if WebSearch is needed
+- Run Reddit/X/YouTube searches
+- Output ALL results including YouTube transcripts
+
+**Read the ENTIRE output.** It contains THREE data sections in this order: Reddit items, X items, and YouTube items. If you miss the YouTube section, you will produce incomplete stats.
+
+**YouTube items in the output look like:** `**{video_id}** (score:N) {channel_name} [N views, N likes]` followed by a title, URL, and optional transcript snippet. Count them and include them in your synthesis and stats block.
 
 ---
 
-## STEP 2: DO WEBSEARCH WHILE SCRIPT RUNS
+## STEP 2: DO WEBSEARCH AFTER SCRIPT COMPLETES
 
-The script auto-detects sources (Bird CLI, API keys, etc). While waiting for it, do WebSearch.
+After the script finishes, do WebSearch to supplement with blogs, tutorials, and news.
 
 For **ALL modes**, do WebSearch to supplement (or provide all data in web-only mode).
 

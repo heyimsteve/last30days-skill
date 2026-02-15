@@ -8,7 +8,9 @@ Inspired by Peter Steinberger's toolchain approach (yt-dlp + summarize CLI).
 
 import json
 import math
+import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -65,19 +67,22 @@ def _extract_core_subject(topic: str) -> str:
             text = text[len(p):].strip()
 
     # Strip individual noise words
+    # NOTE: 'tips', 'tricks', 'tutorial', 'guide', 'review', 'reviews'
+    # are intentionally KEPT — they're YouTube content types that improve search
     noise = {
         'best', 'top', 'good', 'great', 'awesome', 'killer',
         'latest', 'new', 'news', 'update', 'updates',
         'trending', 'hottest', 'popular', 'viral',
-        'practices', 'features', 'guide', 'tutorial',
-        'recommendations', 'advice', 'review', 'reviews',
-        'prompt', 'prompts', 'prompting', 'techniques', 'tips',
-        'tricks', 'methods', 'strategies', 'approaches',
+        'practices', 'features',
+        'recommendations', 'advice',
+        'prompt', 'prompts', 'prompting',
+        'methods', 'strategies', 'approaches',
     }
     words = text.split()
     filtered = [w for w in words if w not in noise]
 
-    return ' '.join(filtered) if filtered else text
+    result = ' '.join(filtered) if filtered else text
+    return result.rstrip('?!.')
 
 
 def search_youtube(
@@ -102,36 +107,51 @@ def search_youtube(
 
     count = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
     core_topic = _extract_core_subject(topic)
-    date_filter = from_date.replace("-", "")  # YYYYMMDD format
 
     _log(f"Searching YouTube for '{core_topic}' (since {from_date}, count={count})")
 
-    # yt-dlp search with metadata extraction via JSON
+    # yt-dlp search with full metadata (no --flat-playlist so dates are real).
+    # No --dateafter — we filter by date in Python with a soft fallback,
+    # because YouTube search returns relevance-sorted results and strict date
+    # filtering returns 0 for evergreen topics like "thumbnail tips".
     cmd = [
         "yt-dlp",
         f"ytsearch{count}:{core_topic}",
-        "--dateafter", date_filter,
-        "--flat-playlist",
         "--dump-json",
+        "--no-warnings",
+        "--no-download",
     ]
 
+    preexec = os.setsid if hasattr(os, 'setsid') else None
+
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            preexec_fn=preexec,
         )
-    except subprocess.TimeoutExpired:
-        _log("YouTube search timed out (60s)")
-        return {"items": [], "error": "Search timed out"}
+        try:
+            stdout, stderr = proc.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                proc.kill()
+            proc.wait(timeout=5)
+            _log("YouTube search timed out (120s)")
+            return {"items": [], "error": "Search timed out"}
     except FileNotFoundError:
         return {"items": [], "error": "yt-dlp not found"}
 
-    if not result.stdout.strip():
+    if not (stdout or "").strip():
         _log("YouTube search returned 0 results")
         return {"items": []}
 
     # Parse JSON-per-line output
     items = []
-    for line in result.stdout.strip().split("\n"):
+    for line in stdout.strip().split("\n"):
         line = line.strip()
         if not line:
             continue
@@ -167,10 +187,17 @@ def search_youtube(
             "why_relevant": f"YouTube video about {core_topic}",
         })
 
+    # Soft date filter: prefer recent items but fall back to all if too few
+    recent = [i for i in items if i["date"] and i["date"] >= from_date]
+    if len(recent) >= 3:
+        items = recent
+        _log(f"Found {len(items)} videos within date range")
+    else:
+        _log(f"Found {len(items)} videos ({len(recent)} within date range, keeping all)")
+
     # Sort by views descending
     items.sort(key=lambda x: x["engagement"]["views"], reverse=True)
 
-    _log(f"Found {len(items)} videos")
     return {"items": items}
 
 
@@ -217,9 +244,26 @@ def fetch_transcript(video_id: str, temp_dir: str) -> Optional[str]:
         f"https://www.youtube.com/watch?v={video_id}",
     ]
 
+    preexec = os.setsid if hasattr(os, 'setsid') else None
+
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            preexec_fn=preexec,
+        )
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                proc.kill()
+            proc.wait(timeout=5)
+            return None
+    except FileNotFoundError:
         return None
 
     # yt-dlp may save as .en.vtt or .en-orig.vtt
