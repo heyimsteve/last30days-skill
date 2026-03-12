@@ -8,9 +8,8 @@ from typing import Any, Dict, List, Optional
 from . import http, env
 
 # Fallback models when the selected model isn't accessible (e.g., org not verified for GPT-5)
-# gpt-5-mini: $0.25/1M input (8x cheaper than gpt-4.1), supports web_search with filters
-# gpt-4o-mini does NOT support web_search with filters param, so exclude it
-MODEL_FALLBACK_ORDER = ["gpt-5-mini", "gpt-4.1-mini", "gpt-4.1"]
+# Note: gpt-4o-mini does NOT support web_search with filters param, so exclude it
+MODEL_FALLBACK_ORDER = ["gpt-4.1", "gpt-4o"]
 
 
 def _log_error(msg: str):

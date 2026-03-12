@@ -64,13 +64,13 @@ class TestIsModelAccessError(unittest.TestCase):
 class TestModelFallbackOrder(unittest.TestCase):
     """Tests for MODEL_FALLBACK_ORDER constant."""
 
-    def test_contains_gpt41(self):
-        """Fallback list should include gpt-4.1 as last resort."""
-        self.assertIn("gpt-4.1", MODEL_FALLBACK_ORDER)
+    def test_contains_gpt4o(self):
+        """Fallback list should include gpt-4o."""
+        self.assertIn("gpt-4o", MODEL_FALLBACK_ORDER)
 
-    def test_gpt5_mini_is_first(self):
-        """gpt-5-mini should be the first fallback option (cheapest with web_search support)."""
-        self.assertEqual(MODEL_FALLBACK_ORDER[0], "gpt-5-mini")
+    def test_gpt41_is_first(self):
+        """gpt-4.1 should be the first fallback option."""
+        self.assertEqual(MODEL_FALLBACK_ORDER[0], "gpt-4.1")
 
 
 if __name__ == "__main__":
